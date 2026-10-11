@@ -25,6 +25,7 @@ TASKS = os.path.join(".twbuild", "tasks")
 
 
 class CycleState(TypedDict, total=False):
+    smoked: str          # 마지막 smoke 가 잰 과제 id (측정용)
     root: str
     phase: str
     feature: str
@@ -357,12 +358,12 @@ def n_smoke(s):
     util.write_json(os.path.join(root, RESULTS, feature, f"{task['id']}.json"), {"t": util.now(), "attempt": (s.get("attempts") or {}).get(task["id"]), "pass": ok, "results": res})
     results = {**(s.get("results") or {}), task["id"]: res}
     if ok:
-        return {"phase": "merge", "results": results, "log": [f"smoke:pass:{task['id']}"]}
+        return {"phase": "merge", "results": results, "smoked": task["id"], "log": [f"smoke:pass:{task['id']}"]}
     if (s.get("attempts") or {}).get(task["id"], 0) >= int(cfg["budget"]["attempts_per_screen"]):
         return {"phase": "blocked", "results": results,
                 "blocked": {"reason": "budget exhausted", "job": task, "detail": _rework_text({"results": results}, task["id"])},
-                "log": [f"smoke:budget:{task['id']}"]}
-    return {"phase": "rework", "results": results, "log": [f"smoke:fail:{task['id']}"]}
+                "smoked": task["id"], "log": [f"smoke:budget:{task['id']}"]}
+    return {"phase": "rework", "results": results, "smoked": task["id"], "log": [f"smoke:fail:{task['id']}"]}
 
 
 def _after_smoke(s):

@@ -189,7 +189,9 @@ def _node_metrics(root, which, name, step, result):
     if which != "cycle" or not isinstance(result, dict):
         return
     if name == "smoke":
-        for tid, res in (result.get("results") or {}).items():
+        tid = result.get("smoked")
+        res_all = result.get("results") or {}
+        for tid, res in ([(tid, res_all.get(tid))] if tid else res_all.items()):      # 이번에 잰 과제만 — results 는 누적이다
             for plat, r in (res or {}).items():
                 if not isinstance(r, dict):
                     continue
