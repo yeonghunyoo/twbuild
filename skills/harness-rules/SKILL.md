@@ -16,6 +16,7 @@ What the developers know is exactly what the gate measures. A failure or rejecti
 | T3 | Every `on_*` handler has an Action | `<handler>` (top level) or `<items><Handler>(item)` (inside a list) appears as an Action case |
 | T4 | No literal color that is not in the tree or the tokens | hex literals in source ⊆ tree values ∪ token colors |
 | T5 | Route set iOS = Android | enum cases of `Route.swift` vs sealed members of `Route.kt` |
+| T6 | Data-layer type names iOS = Android | type names under `App/Core/Data` vs `core/data` (Repository · Store · Draft · models) — same names, same method names |
 
 Also binding: the structure (nesting · order · containers) is the tree's; UiState field names, Action names and data object names/methods are the
 same on both platforms (the generator names them; keep them).

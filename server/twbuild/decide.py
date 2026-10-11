@@ -52,7 +52,7 @@ def record(cwd, topic, text, by):
         raise DecideError('decide <노드 ID> "<해석>" --by ios|android|lead')
     led = ledger(root)
     for d in led["decisions"]:
-        if d["topic"] == topic and d["status"] != "flipped":
+        if d["topic"].lower() == topic.lower() and d["status"] != "flipped":      # 주제는 대소문자를 가리지 않는다 (n.Home ≡ n.home)
             return root, d, False
     feature, screen = feature_of(root, topic)
     did = f"D-{len(led['decisions']) + 1:02d}"
@@ -86,6 +86,20 @@ def flip(cwd, did, text, by="lead"):
     led["decisions"].append(new)
     _save(root, led)
     return new
+
+
+def discard(cwd, did, reason="superseded"):
+    """잠정 결정을 버린다 — 다른 결정이 이미 같은 주제를 정했을 때. flipped 로 남기고 사유를 적는다."""
+    root = main_root(cwd)
+    led = ledger(root)
+    for d in led["decisions"]:
+        if d["id"] == did:
+            d["status"] = "flipped"
+            d["discarded"] = reason
+            d["confirmed_t"] = util.now()
+            _save(root, led)
+            return d
+    raise DecideError(f"없는 결정: {did}")
 
 
 def since(root, feature, t_iso):
@@ -125,6 +139,9 @@ def cli(argv, cwd):
     if argv[0] == "confirm" and len(argv) == 2:
         d = confirm(cwd, argv[1])
         return 0, f"{d['id']} 확정."
+    if argv[0] == "discard" and len(argv) >= 2:
+        d = discard(cwd, argv[1], " ".join(argv[2:]) or "superseded")
+        return 0, f"{d['id']} 폐기: {d.get('discarded')}"
     if argv[0] == "flip" and len(argv) >= 3:
         d = flip(cwd, argv[1], " ".join(argv[2:]))
         return 0, f"{d['flips']} 를 뒤집어 {d['id']} 로 확정: {d['text']}"

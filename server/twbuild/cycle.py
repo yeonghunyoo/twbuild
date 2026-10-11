@@ -346,6 +346,9 @@ def n_smoke(s):
         res[p] = r
     if len(wts) == 2:
         par = gate.parity_check(wts.get("ios", root), wts.get("android", root), vars_)
+        dp = gate.data_parity_check(wts.get("ios", root), wts.get("android", root), vars_)
+        if dp["status"] == "fail":
+            par = {"status": "fail", "violations": par["violations"] + dp["violations"]}
         for p in res:
             res[p]["parity"] = par
     ok = all(r["static"]["status"] != "fail" and r["build"]["status"] != "fail" and (r.get("parity") or {}).get("status") != "fail" for r in res.values())

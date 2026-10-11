@@ -123,6 +123,36 @@ def _strip_comments(text):
     return "\n".join(l.split("//", 1)[0] for l in text.splitlines())
 
 
+_SWIFT_TYPES = re.compile(r"^\s*(?:public\s+|internal\s+)?(?:final\s+)?(?:protocol|class|struct|actor|enum)\s+(\w+)", re.M)
+_KT_TYPES = re.compile(r"^\s*(?:public\s+|internal\s+)?(?:data\s+|sealed\s+|open\s+|abstract\s+)?(?:interface|class|object)\s+(\w+)", re.M)
+
+
+def data_types(base, platform, vars_):
+    """데이터 계층의 타입 이름 — iOS App/Core/Data · Android core/data. 두 플랫폼이 같아야 한다 (AGENT.md 14장)."""
+    if platform == "ios":
+        d = os.path.join(base, "apps/ios/App/Core/Data")
+        rx = _SWIFT_TYPES
+    else:
+        d = os.path.join(base, "apps/android/app/src/main/kotlin", vars_["id"].replace(".", "/"), "core/data")
+        rx = _KT_TYPES
+    names = set()
+    if not os.path.isdir(d):
+        return names
+    for base_dir, _, files in os.walk(d):
+        for n in files:
+            if n.endswith((".swift", ".kt")):
+                names |= set(rx.findall(_strip_comments(util.read_text(os.path.join(base_dir, n), ""))))
+    return names
+
+
+def data_parity_check(ios_base, android_base, vars_):
+    """T6 — 데이터 객체(Repository · Store · Draft · 모델) 이름 집합 iOS = Android."""
+    a, b = data_types(ios_base, "ios", vars_), data_types(android_base, "android", vars_)
+    if a == b:
+        return {"status": "pass" if a else "unmeasured", "violations": []}
+    return {"status": "fail", "violations": [{"rule": "T6", "detail": f"data types differ — ios only: {sorted(a - b)}, android only: {sorted(b - a)}"}]}
+
+
 def parity_check(ios_base, android_base, vars_):
     a, b = routes(ios_base, "ios", vars_), routes(android_base, "android", vars_)
     if a == b:
