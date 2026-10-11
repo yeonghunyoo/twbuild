@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "twbuild",
+  "description": "iOS · Android 화면 단위 동시 개발 하네스",
+  "owner": {"name": "yeonghunyoo"},
+  "plugins": [
+    {
+      "name": "twbuild",
+      "description": "Claude Design 디자인 → 레이아웃 트리 → 구조 초안 → iOS ∥ Android 개발자 → 스모크 → 자동 머지.",
+      "author": {"name": "yeonghunyoo"},
+      "category": "development",
+      "source": "./"
+    }
+  ]
+}

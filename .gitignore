@@ -1,0 +1,22 @@
+server/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.claude/settings.local.json
+
+# 로컬 전용 · 민감 파일
+CLAUDE.local.md
+.claude/*.local.*
+.twbuild/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
