@@ -21,11 +21,11 @@ HEX_RE = re.compile(r"(?<![\w#])#([0-9a-fA-F]{6})\b|twHex:\s*0x([0-9A-Fa-f]{6})|
 
 def _sources(base, platform):
     out = {}
-    for d, _, names in os.walk(base):
-        if any(part in d for part in ("/build/", "/.gradle", "/DerivedData", "/.twbuild")):
-            continue
+    skip = {"build", ".gradle", "DerivedData", ".twbuild", "Generated", "generated", ".build"}
+    for d, dirs, names in os.walk(base):
+        dirs[:] = [x for x in dirs if x not in skip]        # base(워크트리) 안의 경로 조각만 본다 — 워크트리 자체가 .twbuild/ 아래에 있다
         for n in names:
-            if n.endswith(SRC_EXT[platform]) and "Generated" not in d and "generated" not in d:
+            if n.endswith(SRC_EXT[platform]):
                 p = os.path.join(d, n)
                 out[os.path.relpath(p, base)] = util.read_text(p, "")
     return out
@@ -103,11 +103,17 @@ def util_quote(s):
 def routes(base, platform, vars_):
     """Route 이름 집합 (소문자) — iOS enum case · Android sealed 멤버."""
     if platform == "ios":
-        t = util.read_text(os.path.join(base, "apps/ios/App/Core/Navigation/Route.swift"), "")
+        t = _strip_comments(util.read_text(os.path.join(base, "apps/ios/App/Core/Navigation/Route.swift"), ""))
         return {m.lower() for m in re.findall(r"^\s*case\s+(\w+)", t, re.M)}
     pkg = vars_["id"].replace(".", "/")
-    t = util.read_text(os.path.join(base, f"apps/android/app/src/main/kotlin/{pkg}/core/navigation/Route.kt"), "")
+    t = _strip_comments(util.read_text(os.path.join(base, f"apps/android/app/src/main/kotlin/{pkg}/core/navigation/Route.kt"), ""))
     return {m.lower() for m in re.findall(r"data (?:object|class)\s+(\w+)", t)}
+
+
+def _strip_comments(text):
+    """// 주석과 /* */ 주석을 뺀다 — 주석 속 예시 코드가 라우트로 잡히지 않게."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return "\n".join(l.split("//", 1)[0] for l in text.splitlines())
 
 
 def parity_check(ios_base, android_base, vars_):

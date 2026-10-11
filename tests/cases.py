@@ -497,10 +497,11 @@ def cycle_graph_end_to_end():
         wt = p["worktrees"]["ios"]
         f = os.path.join(wt, "apps/ios/App/Features/Mini/Sheet/SheetView.swift")
         orig = util.read_text(f)
-        util.write_text(f, orig.replace('.accessibilityIdentifier("n.sheet.group0")', ""))
+        util.write_text(f, orig.replace('.accessibilityIdentifier("n.sheet.box0")', ""))
+        check(orig != util.read_text(f), "테스트 전제: 지울 ID 가 초안에 있다")
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         p = out["pending"]
-        check(p["task"] == "build" and p["attempt"] == 2 and "T1" in p["prompts"]["ios"] and "n.sheet.group0" in p["prompts"]["ios"], out.get("message"))
+        check(p["task"] == "build" and p["attempt"] == 2 and "T1" in p["prompts"]["ios"] and "n.sheet.box0" in p["prompts"]["ios"], out.get("message"))
         util.write_text(f, orig)
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         check(out.get("pending") is None and "사이클 완료" in out.get("report", ""), out)
