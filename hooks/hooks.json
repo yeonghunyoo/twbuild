@@ -1,5 +1,5 @@
 {
-  "description": "twbuild 차단 훅 — 욜로 모드의 안전장치. 원격 push · 이력 재작성 · 레포 밖 쓰기 · 보호 구역 · 민감 파일 · 설치 · Claude Design 쓰기를 막는다 (거부 사유에 규칙 ID).",
+  "description": "twbuild 훅 — 욜로 모드의 안전장치(guard.py H1~H7) · Claude Design 검문(design_guard.py D1~D5) · 디자인 캡처(design_capture.py).",
   "hooks": {
     "PreToolUse": [
       {
@@ -10,6 +10,30 @@
             "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
             "timeout": 10,
             "statusMessage": "twbuild 검문"
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__.*claude[-_]design",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/design_guard.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 10,
+            "statusMessage": "twbuild 디자인 검문"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__.*claude[-_]design__(read_file|list_files)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/design_capture.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 20,
+            "statusMessage": "twbuild 디자인 캡처"
           }
         ]
       }

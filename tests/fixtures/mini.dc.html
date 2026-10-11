@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<script src="support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mini-ds/styles.css">
+<script src="_ds/mini-ds/_ds_bundle.js"></script>
+</helmet>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+<div style="position:relative;height:874px;background:var(--color-bg)">
+
+<sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:16px;padding:8px">
+  <h1 style="font-family:var(--font-heading);font-size:28px;margin:0">{{ title }}</h1>
+  <span style="font-size:14px;color:var(--color-neutral-400)">이번 주 {{ streak }}일</span>
+  <sc-if value="{{ showHero }}" hint-placeholder-val="{{ false }}">
+    <div class="card" style="border-radius:16px;padding:8px">히어로</div>
+  </sc-if>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <sc-for list="{{ items }}" as="it" hint-placeholder-count="2">
+      <div onClick="{{ it.open }}" style="{{ it.style }}">
+        <b style="font-size:14px">{{ it.name }}</b>
+        <svg width="14" height="14" viewBox="0 0 24 24"><path d="M7 4.5v15"></path></svg>
+      </div>
+    </sc-for>
+  </div>
+  <input value="{{ name }}" onInput="{{ setName }}" placeholder="이름" style="font-size:20px;color:#201e1d">
+  <marquee>old</marquee>
+</div>
+</sc-if>
+
+<sc-if value="{{ isStats }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column"><span>기록</span></div>
+</sc-if>
+
+<div style="{{ backdropStyle }}" onClick="{{ closeSheet }}"></div>
+<div style="{{ sheetStyle }}">
+  <div onClick="{{ closeSheet }}" style="display:flex;justify-content:center"><span style="width:36px;height:4px;background:rgba(255,255,255,.3)"></span></div>
+</div>
+
+</div>
+</x-import>
+</x-dc>
+<script type="text/x-dc" data-dc-script="">
+const DEFAULT_STATE = { tab: 'home', sheetOpen: false };
+class Component extends DCLogic {
+  state = { ...DEFAULT_STATE };
+  renderVals() {
+    const s = this.state;
+    return {
+      isHome: s.tab === 'home',
+      isStats: s.tab === 'stats',
+      showHero: true,
+      title: '미니', streak: 3, name: '', items: [],
+      sheetStyle: `transform:translateY(${s.sheetOpen ? '0' : '100%'})`,
+      backdropStyle: `opacity:${s.sheetOpen ? 1 : 0}`,
+    };
+  }
+}
+</script>
+</body></html>

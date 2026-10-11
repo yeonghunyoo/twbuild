@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from . import config, contract, git, util
+from . import config, contract, git, tokens, util
 
 PY_MIN = (3, 10)
 JDK_MIN = 17
@@ -129,9 +129,10 @@ def checks(root, cfg=None, t=None):
                           "", f"{p} 전체", 2))
     try:
         drift = contract.drift(root) if os.path.isfile(os.path.join(root, util.API_DIR, util.API_FILE)) else ["(계약 없음)"]
-        out.append(_check("contract", "계약 → 생성물 재생성 일치", not drift, ", ".join(drift) if drift else "", "", "계약 · 클라이언트", 2))
+        drift += tokens.drift(root, cfg)
+        out.append(_check("contract", "계약 · 토큰 → 생성물 재생성 일치", not drift, ", ".join(drift) if drift else "", "", "계약 · 클라이언트 · 토큰", 2))
     except contract.ContractError as e:
-        out.append(_check("contract", "계약 → 생성물 재생성 일치", False, str(e), "api/openapi.yaml · fragments 충돌을 고친다", "계약 · 클라이언트", 2))
+        out.append(_check("contract", "계약 · 토큰 → 생성물 재생성 일치", False, str(e), "api/openapi.yaml · fragments 충돌을 고친다", "계약 · 클라이언트 · 토큰", 2))
     out.append(_check("rules", ".claude/rules 골격", all(os.path.isdir(os.path.join(root, util.RULES_DIR, s)) for s in util.RULE_SCOPES), "", "", "메모리", 1))
     sc = util.read_json(util.tw(root, util.SELFCHECK), None)
     failed = [f"{k} 실패 — {v.get('detail', '')}" for k, v in ((sc or {}).get("layers") or {}).items() if v.get("status") == "fail"]

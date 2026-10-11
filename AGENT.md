@@ -31,6 +31,7 @@
 ```
 design/                         디자인 정본 (커밋)
   ds/styles.css · ds/components/  디자인 시스템 (첫 사이클)
+  ds/tokens.json                  토큰 중간 표현 (생성물) → Tokens.swift · Tokens.kt
   <기능>/<화면>.dc.html           화면 원본 — 템플릿 + 인라인 스타일 + 로직 스크립트
   <기능>/layout/<화면>.json       레이아웃 트리 (생성물)
   index.json                      원장 — 화면마다 현재 run · 트리 해시 · 빌드에 쓴 트리 해시
@@ -54,13 +55,25 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 
 | 훅 | 대상 | 동작 |
 |---|---|---|
-| 검문 (PreToolUse) | `mcp__claude-design__*` | design run 밖 호출 · 허용 목록 밖 경로 거부(규칙 ID 를 사유로). 허용 목록은 고른 `.dc.html` 에서 시작해 참조를 따라 늘어난다. 쓰기 · 공유 · `render_preview` 는 항상 거부 |
-| 캡처 (PostToolUse) | `read_file` | 본문을 디코딩해 `design/` 에 바이트 그대로 쓰고, 모델에는 경로 한 줄만 넘긴다(`updatedMCPToolOutput`). 디스크로 빠진 큰 결과도 집어 온다 |
+| 검문 (PreToolUse) | `mcp__*claude-design__*` | `hooks/design_guard.py` → `design.allowed()`: D1 run 밖 호출 · D2 다른 프로젝트 · D3 거부 목록(support.js · standalone HTML · 번들 · uploads · 바이너리) · D4 허용 목록 밖 · D5 크기 상한. 허용 목록은 고른 `.dc.html` 에서 시작해 `<helmet>` · `x-import` 참조를 따라 늘어난다. `list_projects` 같은 메타 도구는 통과. 쓰기 · 공유 · `render_preview` 는 `guard.py` H7 이 항상 거부 |
+| 캡처 (PostToolUse) | `read_file` · `list_files` | `hooks/design_capture.py` → `design.capture()`: 래퍼(`<untrusted-project-content path etag>`)를 벗기고 엔티티 디코딩해 `design/` 에 바이트 그대로 쓰고(`_ds/*/x` → `design/ds/x`, 화면 · JSX → `design/<기능>/`), 모델에는 경로 · 바이트 · sha 한 줄만(`updatedMCPToolOutput`). 디스크로 빠진 큰 결과도 집어 온다. `list_files` 는 경로별 etag · size 를 run 에 남긴다(support.js etag = 형식 지문, size = D5 판정) |
 
 **design run**
-- ID `R-0001` 순번. 기록: 파일별 etag · sha256 · 이전 run 대비 추가 · 변경 · 삭제 · 화면별 트리 해시. run 마다 커밋 + 태그.
+- ID `R-0001` 순번. run 은 하나만 진행(`.twbuild/intake/<기능>/run.json`). 시작 `start(scope, project, screens, ds_project)` → 받기 → `finish(spec)` 가 트리 · 토큰 생성 · 원장 갱신 · `design/runs/R-000N.json`(파일별 etag · sha256 · bytes · 이전 run 대비 추가/변경/삭제 · 화면별 트리 해시 · support.js etag) · `design-run: R-000N (<기능>)` 커밋 + `design-run/R-000N` 태그.
+- 훅이 없는 자리(테스트 · 수동)는 `twbuild design start|capture|listing|trial|finish|abort|status` 로 같은 코드를 부른다.
 - 원장 판정: 빌드에 쓴 트리 해시 = 현재 트리 해시 → 최신. 다르면 run 간 트리 diff(바뀐 노드 ID)를 재작업 과제로 낸다 — 개발자 코드를 덮지 않는다.
 - 원장은 결정적 단계만 쓴다. LLM 은 쓰지 않는다.
+
+**화면 매핑** — `tree.detect_screens` 가 후보를 내고 lead 가 이름을 확인한다(`sheet` → `mixer` 처럼). 못 가르면 lead 과제.
+
+| 종류 | 근거 | 예 (사운드스케이프) |
+|---|---|---|
+| state | `<sc-if value="{{ isX }}">` 어디에 있든. 탭 비교로 파생된 플래그(`showPresetList: s.tab === 'sound'`)는 그 탭 화면에 붙어 구역이 여럿 | onboarding · home · sound(isSound + showPresetList + showSoundList) · stats |
+| shell | is* 분기를 품은 비상태 분기 — 탭 바 같은 공용 크롬 | shell(appVisible): 콘텐츠 호스트(home · sound · stats 슬롯) + 탭 바 |
+| overlay | 페이지 루트 바로 아래 `style="{{ xStyle }}"` 블록. backdrop 은 다음 형제에 붙는다 | nowPlaying · settings(backdrop + sheet) · mixer(backdrop + sheet) |
+
+- 다른 화면에 속한 블록은 트리에서 `{"kind": "screen", "ref": "<화면>"}` 슬롯이다(연속 같은 ref 는 하나). 다른 화면 안의 조건 구역(`showFavHero`)은 화면이 아니라 그 화면의 `if` 노드다.
+- 실측 (2026-10-11): 사운드스케이프 `forest.dc.html` → 화면 8개 · 노드 15~44개/화면 · 못 잼 0 · 토큰 48개(못 잼 4: color-mix 파생) · 생성 토큰으로 두 플랫폼 빌드 통과.
 
 이미지는 사람이 `assets/` 에 넣는다(커넥터는 텍스트만). 폰트는 `styles.css` 의 웹폰트를 하네스가 받는다(네트워크 확인).
 디자인 프로젝트 · 화면은 intake 에서 lead 가 사용자에게 묻는다(ask).
@@ -71,11 +84,11 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 
 | 필드 | 내용 |
 |---|---|
-| `id` | 고정 노드 ID → 코드의 `accessibilityIdentifier` / `testTag` |
-| `kind` | `if`(상태 키) · `list`(반복) · `row` · `column` · `grid` · `group` · `box` · `text` · `icon` · `input` · `image` |
-| `style` | CSS 속성 전부. 토큰과 값이 맞으면 토큰 이름, 아니면 원래 값 |
+| `id` | 고정 노드 ID `n.<화면>.<kind><형제 index>…`(예 `n.home.column0.row0.text1`) → 코드의 `accessibilityIdentifier` / `testTag`. 경로 기반이라 같은 입력 = 같은 ID, 구조가 바뀐 자리만 ID 가 바뀐다 |
+| `kind` | `if`(상태 키) · `list`(반복) · `row` · `column` · `grid` · `group` · `box` · `text` · `icon` · `input` · `image` · `screen`(다른 화면 슬롯) · `unknown`(못 잼 — 모르는 태그) |
+| `style` · `style_bind` | CSS 속성 전부. 토큰과 값이 맞으면 토큰 상수 이름(`Tokens.Color.accent400` · `Tokens.Space.s2` · `Tokens.Radius.md`), 아니면 원래 값. 전체 또는 앞부분이 바인딩이면 `style_bind`(상태가 정하는 스타일) |
 | `class` | 디자인 시스템 클래스 → 그 카탈로그 컴포넌트로 만든다 |
-| `text` · `bind` · `on_*` | 문구 · 바인딩 상태 키 · 핸들러 이름 |
+| `text` · `params` · `raw_text` · `bind` · `on_*` | 문구(바인딩이 섞이면 `{키}` 자리 + `params`) · 문구 키 연결 전엔 `raw_text` · 바인딩 상태 키 · 핸들러 이름(`on_click` · `on_input` · `on_mousedown` …) |
 
 - 원래 값(px · hex)은 트리에 있을 때만 쓴다. 트리에 없는 값을 지어내면 위반.
 - 한 `.dc.html` 에 여러 화면이 `sc-if` 로 섞이면 intake 가 화면 ↔ 분기를 매핑한다. 모르는 태그는 "못 잼" 으로 남긴다.
@@ -194,9 +207,8 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 막지 않고 placeholder · mock 으로 진행하고 사람 할 일로 모은다. 정본은 `config/placeholders.json` → `.env.example` · `SETUP.md` 생성.
 - 값은 `.env.local`(gitignore). `twbuild init` 이 묻고, `twbuild doctor` 가 ✅/❌.
 - 시크릿 · 개인정보는 pre-commit · 머지에서 이력까지 검사, 채팅 출력은 마스킹.
-- 권한은 **욜로 모드가 기본** — wire 가 대상 레포 `.claude/settings.local.json` 에 `bypassPermissions` 를 쓴다.
-  확인 창이 없으므로 위험 동작은 PreToolUse 훅이 **차단**한다(경보 아님, 거부 사유는 규칙 ID): 원격 push · 레포 밖 쓰기 · 삭제 · 시크릿 파일 접근 · git 이력 재작성 · Claude Design 쓰기.
-  실측할 것: 설정만으로 모드가 켜지는지 · 첫 동의가 필요한지 · 서브에이전트가 물려받는지.
+- 권한은 **욜로(bypass) 모드를 권한다** — 단, 프로젝트 설정(`.claude/settings*.json`)으로는 켤 수 없다(Claude Code 2.1.257+). 사용자 설정(`~/.claude/settings.json` permissions.defaultMode) 또는 `claude --permission-mode bypassPermissions` 로 켜고, 서브에이전트는 메인 세션 모드를 물려받는다. wire 는 프로젝트 settings 에 하네스 명령 허용 목록과 거부 목록만 더하고, doctor · report 가 켜는 법을 안내한다.
+  확인 창이 없으므로 위험 동작은 PreToolUse 훅(`hooks/guard.py`)이 **차단**한다(경보 아님, 거부 사유는 규칙 ID): H1 원격 push · H2 git 이력 재작성 · H3 레포 밖 쓰기 · H4 보호 구역(design/ · api/generated · api/fragments · .twbuild/) · H5 민감 파일 · 환경 변수 덤프 · H6 설치 · 권한 상승 · H7 Claude Design 쓰기.
 
 ## 12. 언어
 
@@ -263,9 +275,12 @@ View ──Action──▶ ViewModel ──▶ 데이터 계층 { Repository · 
 ## 설정 — `.twbuild/config.yaml`
 
 ```yaml
-platforms: [ios, android]
+platforms: [ios, android]         # 첫 셋업은 툴체인 실측으로 정한다
 architecture: mvvm-udf            # 첫 머지 뒤 잠김
 min_os: {ios: 17, android: 26}    # @Observable = iOS 17+. 첫 머지 뒤 잠김
+app: {name: "", product: "", id: ""}   # interview 가 채운다. product = ASCII PascalCase, id = com.example.<slug> (첫 머지 뒤 잠김)
+auth: {providers: [email, apple, google]}
+setup: {build: true}             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드
 smoke: {device: merge}            # every | merge | off
 budget: {attempts_per_screen: 5}
 design:
@@ -286,16 +301,15 @@ agents:
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
 | `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 |
 | `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만 |
-| `server/` | MCP 서버 · 라우터 · 그래프 둘 · 디자인 파서(트리 · 초안 · 토큰 · run 원장) · CLI(`twbuild decide/doctor/init/stats`) · 측정 기록 |
-| `hooks/` | 디자인 검문 · 캡처 · 결정 주입 · 위험 동작 차단(욜로 안전장치) |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI) · `twbuild/`: util · yaml_lite · config · leaks · git · probe(doctor) · contract · setup · metrics · graph(LangGraph) · router · server(MCP) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR`. 구조 초안 생성 · decide · 사이클 그래프는 다음 |
+| `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · 결정 주입(다음). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
 | `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
-| `tests/` | 임시 레포로 전체 사이클 |
+| `tests/` | `run.sh` → `cases.py` (임시 레포 · 픽스처 `fixtures/mini.dc.html`) — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run |
 
 ## handoff-agent 에서 가져올 것 (`../handoff-agent`, 이식 후 레포와 이 절 삭제)
 
-`leaks.py`(마스킹) · `git.py`(워크트리 · 머지) · `util.py` 일부 · `api.py`(YAML 파서 · 라우트) · `gen.py`(같은 입력 = 같은 바이트) ·
-`derive.py` 레이아웃 트리(`_TreeParser` · `_TokenMap` · `_node_json` · `_screen_slice` · `layout_status`) · 빌더 CSS → SwiftUI/Compose 번역표(→ translate) ·
-`hooks/guard.py` · `run.py` venv 부트스트랩 · `graph.py` task/submit 패턴 · 테스트 방식 · 셋업의 멱등 마커 배선 · "남은 칸만 묻기".
+가져왔다: `leaks.py` · `git.py` · `util.py` 일부 · `api.py` YAML 파서(→ yaml_lite) · 라우트 · `derive.py` 레이아웃 트리(→ tree) · `hooks/guard.py` · `run.py` venv 부트스트랩 · `graph.py` task/submit 패턴 · 테스트 방식 · 멱등 마커 배선 · "남은 칸만 묻기".
+남은 것: `gen.py`(Swift · Kotlin 생성 — 계약 모델 · 클라이언트) · 빌더 CSS → SwiftUI/Compose 번역표(→ `<플랫폼>-translate`).
 
 ## 금지
 
@@ -315,6 +329,7 @@ agents:
 | 3 | 워크트리에서 `.claude/rules` `paths:` | ✅ 그 워크트리의 rules 가 워크트리 기준으로 로드. 메인 레포 rule 은 안 붙음 → 결정은 훅 주입, rule 은 전부 경로 스코프 |
 | 4 | 화면 하나 한 사이클의 수렴 횟수 · 시간 | 대기 |
 | 5 | 기기 스모크를 머지 직전 한 번으로 감당 | 대기 |
+| 6 | 디자인 import — 실제 프로젝트(사운드스케이프) 트리 · 토큰 | ✅ 화면 8개 · 생성 토큰으로 두 플랫폼 빌드 통과 (훅 경로는 플러그인 설치 세션에서 실측 필요) |
 
 2026-10-11 · Claude Code 2.1.296 · 카나리 토큰 + 서브에이전트 트랜스크립트로 판정. 디자인 커넥터 실측: 텍스트 11개 바이트 일치 · 검문 거부 동작 · PNG 거부 · standalone HTML 은 1 MB 한 줄이 256 KiB 상한에 잘림.
 

@@ -76,12 +76,60 @@ def _print_task(out):
     print(out.get("message") or json.dumps(out, ensure_ascii=False, indent=2))
 
 
+def _design(a, root):
+    """design start|capture|listing|trial|finish|abort|status — 훅이 없는 자리(테스트 · 수동 import)에서 같은 코드를 부른다."""
+    from twbuild import design, leaks
+    sub = a.args[0] if a.args else "status"
+    try:
+        if sub == "start":
+            run = design.start(root, a.scope, a.project, a.screen, ds_project_id=a.ds_project, bootstrap=a.bootstrap)
+            print(f"{run['id']} 시작 — scope {run['scope']} · 화면 {run['screens']}")
+        elif sub == "capture":
+            with open(a.file, encoding="utf-8") as f:
+                text = f.read()
+            path, etag, body = design.decode_tool_text(text)
+            rec = design.capture(root, a.path or path, body, a.etag or etag or "", a.project)
+            print(f"캡처: {rec['dest']} ({rec['bytes']} bytes, sha256 {rec['sha256'][:12]})")
+        elif sub == "listing":
+            with open(a.file, encoding="utf-8") as f:
+                n = design.record_listing(root, json.load(f))
+            print(f"목록 {n}개 기록")
+        elif sub == "trial":
+            with open(a.file, encoding="utf-8") as f:
+                text = f.read()
+            spec = json.load(open(a.spec, encoding="utf-8")) if a.spec else None
+            out = design.trial(root, text, spec)
+            print(json.dumps(leaks.mask_all_deep(out), ensure_ascii=False, indent=2))
+        elif sub == "finish":
+            spec = json.load(open(a.spec, encoding="utf-8")) if a.spec else None
+            out = design.finish(root, spec)
+            print(json.dumps(leaks.mask_all_deep(out), ensure_ascii=False, indent=2))
+        elif sub == "abort":
+            run = design.abort(root)
+            print(f"{run['id']} 중단" if run else "진행 중인 run 이 없다")
+        else:
+            print(json.dumps(leaks.mask_all_deep({"active": design.active(root), "summary": design.summary(root)}), ensure_ascii=False, indent=2))
+    except design.DesignError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="twbuild MCP 서버 · CLI")
     ap.add_argument("cmd", nargs="?", default="serve",
-                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version"])
+                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--root", default=None)
+    ap.add_argument("--scope", default=None, help="design start: 기능 이름")
+    ap.add_argument("--project", default=None, help="design start: Claude Design 프로젝트 id")
+    ap.add_argument("--ds-project", default=None, help="design start: 디자인 시스템 프로젝트 id")
+    ap.add_argument("--screen", action="append", default=[], help="design start: 받을 화면 .dc.html (여러 번)")
+    ap.add_argument("--bootstrap", action="store_true", help="design start: 디자인 시스템 컴포넌트까지 받는다(첫 사이클)")
+    ap.add_argument("--path", default=None, help="design capture: 커넥터 경로")
+    ap.add_argument("--etag", default="", help="design capture: etag")
+    ap.add_argument("--file", default=None, help="design capture/listing/trial: 본문 파일")
+    ap.add_argument("--spec", default=None, help="design finish/trial: 화면 spec JSON 파일")
     a = ap.parse_args()
     root = os.path.abspath(a.root or os.environ.get("TWBUILD_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -113,6 +161,13 @@ def main():
     if a.cmd == "decide":
         print("twbuild decide 는 사이클 그래프와 함께 붙는다 (다음 단계).", file=sys.stderr)
         return 2
+    if a.cmd == "tokens":
+        from twbuild import tokens
+        files = tokens.write(root)
+        print("토큰 생성: " + (", ".join(files) if files else "design/ds/styles.css 가 없다"))
+        return 0
+    if a.cmd == "design":
+        return _design(a, root)
     bootstrap_venv()
     from twbuild import router
     if a.cmd == "status":

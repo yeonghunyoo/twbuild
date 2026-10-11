@@ -11,7 +11,9 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
 
 - M1 뼈대 완료 (2026-10-11) — 서버(`server/twbuild/`: 라우터 · 셋업 그래프 · probe=doctor · wire · interview · scaffold · selfcheck · report · 측정 · 계약 합치기) · MCP(`status/advance/submit/doctor`) · CLI(`bin/twbuild`) · 차단 훅(`hooks/guard.py` H1~H7) · 스킬(`twbuild` · `setup`) · 골격 템플릿(iOS xcodegen · Android Gradle, 둘 다 빈 골격 빌드 통과) · 테스트(`tests/run.sh`, 8개).
   실측과 다른 설계는 코드에 맞춰 둠: bypass 는 프로젝트 설정으로 못 켬(wire 는 allow/deny 만 씀, doctor 가 안내) · venv 는 `~/.claude/plugins/data/twbuild/venv` · 루트는 `CLAUDE_PROJECT_DIR` · interview 에 조건부 `ascii_name`. AGENT.md 갱신은 M2 뒤 한 번에.
-- 미구현: 사이클 그래프(intake → merge) · 에이전트 · 개발자 스킬 · 디자인 훅 · `decide` · 공개 스킬 설치(설정만 있음) · Swift/Kotlin 계약 코드 생성 · mock 서버.
+- M2 디자인 import 완료 (2026-10-11) — `tokens.py`(styles.css → tokens.json · Tokens.swift · Tokens.kt) · `tree.py`(dc.html → 화면 후보 · 레이아웃 트리 · 노드 ID · 슬롯) · `design.py`(run 원장 · 허용 D1~D5 · 캡처 · finish 커밋 + 태그) · 훅(`design_guard.py` · `design_capture.py`) · CLI `twbuild design …` · 테스트 4개 추가(총 12).
+  실측: 대상 레포 `~/orca/soundscape`(테스트 run) 에 셋업 + R-0001(사운드스케이프 명상 앱 forest.dc.html → 화면 8개) 적용. 훅 경로(캡처 래퍼 개행 처리)는 플러그인 설치 세션에서 아직 실측 전.
+- 미구현: 사이클 그래프(intake → plan → build → smoke → merge) · `ios-dev`/`android-dev` 에이전트 · 개발자 스킬(dev-loop · translate · playbook · harness-rules) · 구조 초안 생성기 · `decide` + 결정 주입 훅 · 공개 스킬 설치(설정만 있음) · Swift/Kotlin 계약 코드 생성 · mock 서버 · 측정 `--feature/--compare`.
 - 2026-10-11 단순화: 핵심(디자인 정본 → 레이아웃 트리 → 구조 초안 → iOS ∥ AOS → 게이트 3층)만 남기고 나머지는 AGENT.md "나중에".
   지시 관리는 "정본 > 과제 프롬프트 > 나머지" 세 줄로 확정.
 - 측정 확정 (2026-10-11) — 구간별 시간 · 시도 · 토큰 지표, 래퍼 · 훅에서 기록(노드 안 금지), `twbuild stats` 터미널 표만. AGENT.md 13장.

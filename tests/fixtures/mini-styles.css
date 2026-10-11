@@ -1,0 +1,16 @@
+/* mini design system — test fixture */
+:root {
+  --color-bg: #f5ead8;
+  --color-text: #201e1d;
+  --color-accent-2-400: #aebf92;
+  --color-neutral-400: #c0b6a5;
+  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+  --font-heading: "Caprasimo", system-ui, sans-serif;
+  --font-heading-weight: 400;
+  --space-1: 4.4px;
+  --space-2: 8px;
+  --radius-md: 16px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+}
+.card { display: flex; padding: var(--space-2); border-radius: var(--radius-md); }
+.btn { display: inline-flex; }

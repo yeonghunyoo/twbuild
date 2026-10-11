@@ -16,7 +16,11 @@ PLUGIN = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(PLUGIN, "server"))
 os.environ["TWBUILD_NO_BUILD"] = "1"          # selfcheck 의 실제 빌드는 끈다 (느리고 툴체인에 매인다)
 
-from twbuild import config, contract, git, leaks, metrics, probe, router, setup, util, yaml_lite  # noqa: E402
+from twbuild import config, contract, design, git, leaks, metrics, probe, router, setup, tokens, tree, util, yaml_lite  # noqa: E402
+
+FIX = os.path.join(HERE, "fixtures")
+MINI = util.read_text(os.path.join(FIX, "mini.dc.html"))
+MINI_CSS = util.read_text(os.path.join(FIX, "mini-styles.css"))
 
 CASES = []
 
@@ -241,6 +245,170 @@ def guard_hook():
         wt = os.path.join(root, ".twbuild", "worktrees", "ios-home")
         allow("Edit", {"file_path": os.path.join(wt, "apps", "ios", "App", "Home.swift")}, cwd=wt)
         deny("Edit", {"file_path": os.path.join(wt, "design", "home.dc.html")}, "H4", cwd=wt)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+# ─────────────────────────── 디자인 — 토큰 · 트리 · run ───────────────────────────
+
+@case
+def tokens_from_css():
+    tk = tokens.tokens(MINI_CSS)
+    check(set(tk["color"]) == {"bg", "text", "accent-2-400", "neutral-400", "divider"}, tk["color"].keys())
+    check(tk["space"]["1"] == {"kind": "dimension", "px": 4.4, "var": "space-1"}, tk["space"]["1"])
+    check(tk["font"]["heading"]["family"] == "Caprasimo" and tk["font"]["heading-weight"]["value"] == 400, tk["font"])
+    check(tk["unresolved"] == ["color-divider"], tk["unresolved"])
+    check(tokens.const("color", "accent-2-400") == "Tokens.Color.accent2_400" and tokens.const("space", "1") == "Tokens.Space.s1", "const 이름")
+    sw, kt = tokens.swift(tk), tokens.kotlin(tk, "com.x.y")
+    check("static let accent2_400 = SwiftUI.Color(twHex: 0xAEBF92)" in sw and "static let s1: CGFloat = 4.4" in sw and "// unresolved" in sw, sw)
+    check("package com.x.y.core.designsystem.generated" in kt and "val md = 16.dp" in kt and 'const val heading = "Caprasimo"' in kt, kt)
+    check(tokens.swift(tk) == sw, "결정적")
+
+
+@case
+def tree_detect_and_layout():
+    markup, script, frame = tree.split(MINI)
+    check(frame == {"component": "IOSDevice", "from": "./ios-frame.jsx", "size": [402, 874], "dark": True}, frame)
+    check(tree.refs(MINI) == ["_ds/mini-ds/styles.css", "_ds/mini-ds/_ds_bundle.js", "ios-frame.jsx"], tree.refs(MINI))
+    specs = tree.detect_screens(markup, script)
+    check([(s["id"], s["kind"]) for s in specs] == [("home", "state"), ("stats", "state"), ("sheet", "overlay")], specs)
+    check(specs[2]["style"] == ["backdropStyle", "sheetStyle"], specs[2])
+    tm = tree.TokenMap(tokens.tokens(MINI_CSS))
+    lay = tree.layout(markup, specs[0], specs, tm, source="x.dc.html", frame=frame)
+    root = lay["root"]
+    check(root["kind"] == "if" and root["when"] == "isHome" and root["default"] == "true" and root["id"] == "n.home", root)
+    col = root["children"][0]
+    check(col["kind"] == "column" and col["id"] == "n.home.column0", col)
+    kinds = [c["kind"] for c in col["children"]]
+    check(kinds == ["text", "text", "if", "grid", "input", "unknown"], kinds)
+    h1, span, cond, grid, inp, unk = col["children"]
+    check(h1["tag"] == "h1" and h1["bind"] == "title" and h1["style"]["font-family"] == "Tokens.Font.heading", h1)
+    check(span["text"] == "이번 주 {streak}일" and span["params"] == ["streak"] and span["style"]["color"] == "Tokens.Color.neutral400", span)
+    check(cond["when"] == "showHero" and cond["children"][0]["class"] == ["card"] and cond["children"][0]["style"]["border-radius"] == "Tokens.Radius.md"
+          and cond["children"][0]["style"]["padding"] == "Tokens.Space.s2", cond)
+    lst = grid["children"][0]
+    check(lst["kind"] == "list" and lst["items"] == "items" and lst["as"] == "it" and lst["placeholder_count"] == 2, lst)
+    item = lst["children"][0]
+    check(item["on_click"] == "it.open" and item["style_bind"] == "it.style" and item["children"][1]["kind"] == "icon" and item["children"][1]["paths"] == 1, item)
+    check(inp["kind"] == "input" and inp["placeholder"] == "이름" and inp["on_input"] == "setName" and inp["style"]["color"] == "Tokens.Color.text", inp)
+    check(unk["kind"] == "unknown" and unk["tag"] == "marquee", unk)
+    check(col["style"]["padding"] == "Tokens.Space.s2" and col["style"]["gap"] == "16px", col["style"])
+    st = tree.status(lay)
+    check(st["nodes"] == 13 and st["unknown"] == ["marquee"] and st["classes"] == ["card"] and st["lists"] == 1 and st["ifs"] == 2
+          and "it.open" in st["handlers"] and "title" in st["binds"], st)
+    # 결정적 · 변경 감지
+    again = tree.layout(markup, specs[0], specs, tm, source="x.dc.html", frame=frame)
+    check(again["hash"] == lay["hash"] and util.stable_json(again) == util.stable_json(lay), "같은 입력 = 같은 바이트")
+    changed = tree.layout(markup.replace("이번 주", "이 주"), specs[0], specs, tm)
+    d = tree.diff_ids(lay["root"], changed["root"])
+    check(changed["hash"] != lay["hash"] and d["changed"] == ["n.home.column0.text1"] and not d["added"], d)
+    sheet = tree.layout(markup, specs[2], specs, tm)
+    check(sheet["root"]["kind"] == "group" and len(sheet["root"]["children"]) == 2 and sheet["root"]["children"][0]["style_bind"] == "backdropStyle", sheet["root"])
+    check(sheet["root"]["children"][0]["on_click"] == "closeSheet", sheet["root"]["children"][0])
+
+
+def _wired_repo():
+    root = tmp_repo()
+    router.advance(root)
+    router.submit(root, {**_answers(), "name": "Mini"})
+    return root
+
+
+@case
+def design_run_flow():
+    root = _wired_repo()
+    try:
+        ok, rule, _ = design.allowed(root, "read_file", "P1", "mini.dc.html")
+        check(not ok and rule == "D1", rule)
+        check(design.allowed(root, "list_projects", None, None)[0], "메타 도구는 run 밖에서도 된다")
+        run = design.start(root, "mini", "P1", ["mini.dc.html"], ds_project_id="DS1")
+        check(run["id"] == "R-0001" and design.active(root)["id"] == "R-0001", run)
+        try:
+            design.start(root, "x", "P1", ["a.dc.html"])
+            check(False, "run 이 둘일 수 없다")
+        except design.DesignError:
+            pass
+        A = lambda tool, pid, path: design.allowed(root, tool, pid, path)  # noqa: E731
+        check(A("read_file", "P1", "mini.dc.html")[0], "고른 화면")
+        check(A("read_file", "P2", "mini.dc.html")[1] == "D2", "다른 프로젝트")
+        check(A("read_file", "P1", "other.dc.html")[1] == "D4", "허용 목록 밖")
+        check(A("read_file", "P1", "support.js")[1] == "D3" and A("read_file", "P1", "mini.html")[1] == "D3"
+              and A("read_file", "P1", "uploads/a.png")[1] == "D3" and A("read_file", "P1", "_ds/mini-ds/_ds_bundle.js")[1] == "D3", "거부 목록")
+        check(A("read_file", "P1", "ios-frame.jsx")[1] == "D4", "참조를 받기 전엔 JSX 도 밖")
+        check(A("read_file", "P1", "_ds/mini-ds/styles.css")[0] and A("read_file", "DS1", "components/button.html")[0]
+              and A("read_file", "DS1", "support.js")[1] == "D3", "디자인 시스템 파일")
+        check(A("list_files", "P1", "")[0] and A("write_files", "P1", "x")[1] == "D4", "list_files 만")
+        design.record_listing(root, [{"path": "support.js", "etag": "s1", "size": 69150}, {"path": "mini.dc.html", "etag": "e1", "size": 3000},
+                                     {"path": "big.dc.html", "etag": "b1", "size": 300000}])
+        run = design.active(root)
+        run["allow"].append("big.dc.html")
+        design._save_run(root, run)
+        check(A("read_file", "P1", "big.dc.html")[1] == "D5", "크기 상한")
+        rec = design.capture(root, "mini.dc.html", MINI, "e1", "P1")
+        check(rec["dest"] == "design/mini/mini.dc.html" and util.read_text(os.path.join(root, rec["dest"])) == MINI and rec["bytes"] == len(MINI.encode()), rec)
+        check(A("read_file", "P1", "ios-frame.jsx")[0], "화면을 받으면 참조 JSX 가 열린다")
+        rec = design.capture(root, "_ds/mini-ds/styles.css", MINI_CSS, "c1", "P1")
+        check(rec["dest"] == "design/ds/styles.css", rec)
+        out = design.finish(root)
+        check(out["run"] == "R-0001" and set(out["screens"]) == {"mini/home", "mini/stats", "mini/sheet"} and out["commit"], out)
+        check(out["tokens"]["unresolved"] == ["color-divider"] and len(out["tokens"]["files"]) == 3, out["tokens"])
+        for rel in ("design/index.json", "design/runs/R-0001.json", "design/forest" if False else "design/mini/layout/home.json", "design/ds/tokens.json",
+                    "apps/ios/App/Core/DesignSystem/Generated/Tokens.swift", "apps/android/app/src/main/kotlin/com/example/mini/core/designsystem/generated/Tokens.kt"):
+            check(os.path.isfile(os.path.join(root, rel)), f"없음: {rel}")
+        idx = design.index(root)
+        check(all(v["status"] == "imported" for v in idx["screens"].values()) and idx["ds"]["run"] == "R-0001", idx)
+        check(design.active(root) is None and design.summary(root)["by_status"] == {"imported": 3}, design.summary(root))
+        check(subprocess.run(["git", "-C", root, "tag"], capture_output=True, text=True).stdout.strip() == "design-run/R-0001", "태그")
+        check(tokens.drift(root) == [] and probe.ready(root)[0], probe.ready(root))
+        # 두 번째 run — 화면 하나가 바뀌면 changed (빌드에 쓴 뒤에만), 사라진 화면은 removed
+        design.set_status(root, "mini/home", "consumed", built={"tree": idx["screens"]["mini/home"]["tree"]})
+        design.start(root, "mini", "P1", ["mini.dc.html"])
+        changed_html = MINI.replace("이번 주", "이 주").replace('<sc-if value="{{ isStats }}" hint-placeholder-val="{{ false }}">\n<div style="display:flex;flex-direction:column"><span>기록</span></div>\n</sc-if>', "")
+        design.capture(root, "mini.dc.html", changed_html, "e2", "P1")
+        out = design.finish(root)
+        check(out["run"] == "R-0002" and out["diff"]["changed"] == ["mini/home"] and out["diff"]["removed"] == ["mini/stats"], out["diff"])
+        idx = design.index(root)
+        check(idx["screens"]["mini/home"]["status"] == "changed" and idx["screens"]["mini/stats"]["status"] == "removed"
+              and idx["screens"]["mini/sheet"]["status"] == "imported", idx["screens"])
+        prev = util.read_json(os.path.join(root, "design/runs/R-0002.json"))
+        check(prev["prev_hashes"]["mini/home"] != out["screens"]["mini/home"]["tree"], "이전 해시 기록")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _hook(name, data):
+    r = subprocess.run([sys.executable, os.path.join(PLUGIN, "hooks", name)], input=json.dumps(data), capture_output=True, text=True)
+    return json.loads(r.stdout)["hookSpecificOutput"] if r.stdout.strip() else None
+
+
+@case
+def design_hooks():
+    import html as htmlmod
+    root = _wired_repo()
+    try:
+        base = {"cwd": root, "hook_event_name": "PreToolUse"}
+        out = _hook("design_guard.py", {**base, "tool_name": "mcp__claude-design__read_file", "tool_input": {"project_id": "P1", "path": "mini.dc.html"}})
+        check(out and out["permissionDecisionReason"].startswith("[D1]"), out)
+        check(_hook("design_guard.py", {**base, "tool_name": "mcp__claude-design__list_projects", "tool_input": {}}) is None, "메타 도구 통과")
+        design.start(root, "mini", "P1", ["mini.dc.html"])
+        check(_hook("design_guard.py", {**base, "tool_name": "mcp__claude-design__read_file", "tool_input": {"project_id": "P1", "path": "mini.dc.html"}}) is None, "허용")
+        out = _hook("design_guard.py", {**base, "tool_name": "mcp__plugin_x_claude-design__read_file", "tool_input": {"project_id": "P1", "path": "forest.html"}})
+        check(out and out["permissionDecisionReason"].startswith("[D3]"), out)
+        # 캡처 — 커넥터 응답 래퍼를 디코딩해 바이트 그대로 쓰고, 모델에는 한 줄만
+        wrapped = f'<untrusted-project-content path="mini.dc.html" etag="e9">\n{htmlmod.escape(MINI, quote=False)}\n</untrusted-project-content>\n(The body above is HTML-entity-escaped…)'
+        out = _hook("design_capture.py", {**base, "hook_event_name": "PostToolUse", "tool_name": "mcp__claude-design__read_file",
+                                          "tool_input": {"project_id": "P1", "path": "mini.dc.html"},
+                                          "tool_response": {"content": [{"type": "text", "text": wrapped}]}})
+        check(out and out["hookEventName"] == "PostToolUse" and "captured by twbuild: design/mini/mini.dc.html" in out["updatedMCPToolOutput"], out)
+        check(util.read_text(os.path.join(root, "design/mini/mini.dc.html")) == MINI, "바이트 일치")
+        run = design.active(root)
+        check(run["files"][0]["etag"] == "e9" and "ios-frame.jsx" in run["allow"], run["files"])
+        listing = json.dumps([{"path": "support.js", "type": "file", "size": 69150, "etag": "s7"}])
+        out = _hook("design_capture.py", {**base, "hook_event_name": "PostToolUse", "tool_name": "mcp__claude-design__list_files",
+                                          "tool_input": {"project_id": "P1", "depth": -1}, "tool_response": listing})
+        check(out is None and design.active(root)["listing"]["support.js"]["etag"] == "s7", design.active(root)["listing"])
+        path, etag, body = design.decode_tool_text(wrapped)
+        check(path == "mini.dc.html" and etag == "e9" and body == MINI, (path, etag, len(body), len(MINI)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
