@@ -276,7 +276,9 @@ def _rework_text(s, task_id):
         if b.get("status") == "fail":
             out.append(f"- [{p}] build failed: {b.get('detail')}\n```\n{b.get('tail', '')}\n```")
         for v in (r.get("parity") or {}).get("violations") or []:
-            out.append(f"- [both] {v['rule']}: {v['detail']}")
+            line = f"- [both] {v['rule']}: {v['detail']}"
+            if line not in out:                 # 패리티는 양쪽 결과에 같은 내용이 실린다 — 한 번만
+                out.append(line)
     return "\n".join(out)
 
 
