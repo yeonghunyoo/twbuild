@@ -230,7 +230,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
     if rework:
         L += ["", "## Rework — the previous attempt failed the gate", rework]
     L += ["", "## Finish",
-          f"- Write a short task note to `.twbuild/tasks/{task['id']}-{platform}.md`: what you did, what you decided (D-ids), what is uncertain, build result.",
+          f"- Write a short task note to `.twbuild/tasks/{task['id']}-{platform}.md` (inside the worktree; git-ignored — do NOT force-add it, the harness collects it at merge): what you did, what you decided (D-ids), what is uncertain, build result.",
           "- Everything committed in the worktree. Then end with a one-paragraph summary: status (done|blocked), commits, note path, open questions.",
           "- Never run git push, never edit files outside your worktree/platform, never read .env* or keys (hooks block these anyway)."]
     return "\n".join(L)
@@ -332,7 +332,8 @@ def n_smoke(s):
         wts[p] = wt
         r = {}
         if task["kind"] == "screen" and task["id"] in lays:
-            r["static"] = gate.static_check(wt, p, lays[task["id"]], hexes)
+            src_hex = gate.source_hexes(util.read_text(os.path.join(root, lays[task["id"]].get("source") or ""), ""))
+            r["static"] = gate.static_check(wt, p, lays[task["id"]], hexes, src_hex)
         else:
             r["static"] = {"status": "unmeasured", "violations": [], "checked": 0}
         log = util.tw(root, util.LOGS_DIR, f"smoke-{feature}-{task['id']}-{p}.log")
@@ -411,6 +412,12 @@ def n_merge(s):
         except design.DesignError:
             pass
     for p in cfg.get("platforms") or []:
+        wt = util.tw(root, util.WORKTREES, worktree_name(p, task["id"]))
+        notes = os.path.join(wt, TASKS)
+        if os.path.isdir(notes):                  # 과제 메모(.twbuild/tasks, gitignore)는 워크트리를 지우기 전에 메인으로 거둔다
+            for n in os.listdir(notes):
+                if n.endswith(".md"):
+                    util.write_text(os.path.join(root, TASKS, n), util.read_text(os.path.join(notes, n), ""))
         git.remove_worktree(root, worktree_name(p, task["id"]))
     rep = evidence(root, feature, task, s, commits)
     util.write_text(os.path.join(root, REPORTS, feature, f"{task['id']}.md"), rep)

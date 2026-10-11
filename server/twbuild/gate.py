@@ -31,6 +31,13 @@ def _sources(base, platform):
     return out
 
 
+def source_hexes(text):
+    """디자인 원본(.dc.html — 로직 스크립트의 데이터 포함)에 적힌 색 리터럴. T4 는 이것도 허용한다."""
+    out = {h.lower() for h in re.findall(r"#([0-9a-fA-F]{6})\b", text or "")}
+    out |= {"".join(c * 2 for c in h.lower()) for h in re.findall(r"#([0-9a-fA-F]{3})\b", text or "")}
+    return out
+
+
 def _tree_values(lay):
     hexes = set()
 
@@ -47,7 +54,7 @@ def _tree_values(lay):
     return hexes
 
 
-def static_check(base, platform, lay, token_hexes=()):
+def static_check(base, platform, lay, token_hexes=(), extra_hexes=()):
     """base: 워크트리(또는 레포) 루트. 화면 코드 전체를 대상으로 본다 (파일 자리는 개발자 소유)."""
     src = _sources(os.path.join(base, util.APPS[platform]), platform)
     blob = "\n".join(src.values())
@@ -87,7 +94,7 @@ def static_check(base, platform, lay, token_hexes=()):
             walk(c, scope)
     if lay.get("root"):
         walk(lay["root"], {})
-    allowed = _tree_values(lay) | {h.lower() for h in token_hexes}
+    allowed = _tree_values(lay) | {h.lower() for h in token_hexes} | {h.lower() for h in extra_hexes}
     for rel, text in src.items():
         for m in HEX_RE.finditer(text):
             h = (m.group(1) or m.group(2) or m.group(3) or "").lower()

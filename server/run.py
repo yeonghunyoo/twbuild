@@ -130,6 +130,7 @@ def main():
     ap.add_argument("--etag", default="", help="design capture: etag")
     ap.add_argument("--file", default=None, help="design capture/listing/trial: 본문 파일")
     ap.add_argument("--spec", default=None, help="design finish/trial: 화면 spec JSON 파일")
+    ap.add_argument("--by", default=None, help="decide: ios | android | lead")
     a = ap.parse_args()
     root = os.path.abspath(a.root or os.environ.get("TWBUILD_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -161,7 +162,7 @@ def main():
     if a.cmd == "decide":
         from twbuild import decide
         try:
-            code, msg = decide.cli(a.args, os.getcwd() if a.root is None else root)
+            code, msg = decide.cli(a.args + (["--by", a.by] if a.by else []), os.getcwd() if a.root is None else root)
         except decide.DecideError as e:
             print(str(e), file=sys.stderr)
             return 2

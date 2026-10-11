@@ -126,6 +126,34 @@ def _fmt_ms(ms):
     return f"{m}m{s:02d}s" if m < 60 else f"{m // 60}h{m % 60:02d}m"
 
 
+def screens_table(root):
+    """화면(과제)별 — 시도 · 정적/빌드 결과 · 개발자 과제 시간 · 토큰 (smoke · agent 이벤트에서)."""
+    rows = {}
+    for e in events(root):
+        if e.get("ev") == "smoke":
+            r = rows.setdefault((e.get("task"), e.get("platform")), {"attempts": 0, "static_fail": 0, "build_fail": 0, "violations": [], "passed": False, "ms": 0.0, "tokens": 0, "agents": 0})
+            r["attempts"] += 1
+            r["static_fail"] += 1 if e.get("static") == "fail" else 0
+            r["build_fail"] += 1 if e.get("build") == "fail" else 0
+            r["violations"] += e.get("violations") or []
+            r["passed"] = r["passed"] or bool(e.get("passed"))
+        elif e.get("ev") == "agent":
+            r = rows.setdefault((e.get("task"), e.get("platform")), {"attempts": 0, "static_fail": 0, "build_fail": 0, "violations": [], "passed": False, "ms": 0.0, "tokens": 0, "agents": 0})
+            r["agents"] += 1
+            r["ms"] += e.get("ms") or 0
+            u = e.get("usage") or {}
+            r["tokens"] += int(u.get("input") or 0) + int(u.get("output") or 0)
+    if not rows:
+        return ""
+    lines = ["", "화면 · 플랫폼 (smoke · 개발자 과제)",
+             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
+    for (task, plat), r in sorted(rows.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
+        viol = ",".join(sorted(set(r["violations"]))) or "-"
+        lines.append(f"  {str(task):<12}{str(plat):<9}{r['attempts']:>4}{r['static_fail']:>8}{r['build_fail']:>8}{'✅' if r['passed'] else '—':>5}"
+                     f"{_fmt_ms(r['ms'] if r['agents'] else None):>10}{(r['tokens'] or '-'):>9}  {viol}")
+    return "\n".join(lines)
+
+
 def stats_table(root):
     """터미널 표 (한국어)."""
     s = summary(root)
@@ -144,4 +172,7 @@ def stats_table(root):
             measured = v["count"] - v["unmeasured"]
             avg = v["ms"] / measured if measured else None
             lines.append(f"  {g:<8}{t:<14}{v['count']:>5}{_fmt_ms(v['ms'] if measured else None):>10}{_fmt_ms(avg):>10}")
+    sc = screens_table(root)
+    if sc:
+        lines.append(sc)
     return "\n".join(lines)
