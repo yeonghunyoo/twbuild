@@ -122,7 +122,20 @@ def build_setup():
     return g
 
 
-BUILDERS = {"setup": build_setup}
+def build_cycle():
+    from . import cycle
+    return cycle.build_cycle()
+
+
+BUILDERS = {"setup": build_setup, "cycle": build_cycle}
+
+
+def values(root, which):
+    """thread 의 저장 상태 (없으면 {})."""
+    if not os.path.isfile(util.tw(root, util.GRAPH_DB)):
+        return {}
+    with _app(root, which) as app:
+        return app.get_state(_cfg(which)).values or {}
 
 
 # ─────────────────────────── 구동 ───────────────────────────
@@ -168,6 +181,23 @@ def _stream(root, which, app, cfg, inp):
                 continue
             ms = (t1 - t0) * 1000 if (t0 and t1) else 0.0
             metrics.node_done(root, which, name, step, ms, error=p.get("error"))
+            _node_metrics(root, which, name, step, p.get("result"))
+
+
+def _node_metrics(root, which, name, step, result):
+    """노드 결과에서 지표를 뽑는다 — 노드 안이 아니라 구동 래퍼에서 (재개 중복 없음). smoke 의 시도 · 층별 결과, merge 의 화면 완료."""
+    if which != "cycle" or not isinstance(result, dict):
+        return
+    if name == "smoke":
+        for tid, res in (result.get("results") or {}).items():
+            for plat, r in (res or {}).items():
+                if not isinstance(r, dict):
+                    continue
+                metrics.record(root, "smoke", key=f"smoke:{tid}:{plat}:{step}", task=tid, platform=plat, step=step,
+                               static=(r.get("static") or {}).get("status"), build=(r.get("build") or {}).get("status"),
+                               violations=[v["rule"] for v in (r.get("static") or {}).get("violations") or []], passed=result.get("phase") == "merge")
+    elif name == "merge" and result.get("phase") in ("build", "done"):
+        metrics.record(root, "merged", key=f"merged:{step}", step=step, cursor=result.get("cursor"))
 
 
 def run(root, which, resume=None):

@@ -133,6 +133,9 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
 
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
+- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
+  과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
+  아직 없는 것: 디자인 시스템 부트스트랩 과제 · review · fix 분류(지금은 실패 전부 → 재작업) · retro · 기기 실행 · 계약 디코딩 층.
 - 사람에게 묻는 것은 전부 ask(AskUserQuestion — 선택지 + 직접 입력, 추천을 맨 위에). 채팅 자유 질문은 쓰지 않는다.
 - 그래프가 과제마다 "호출할 스킬" 을 싣는다.
 - 노드는 부작용 뒤에 interrupt 하지 않는다(재개 시 노드가 처음부터 돈다). 저장 상태보다 실측이 이긴다.
@@ -163,6 +166,8 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
 - 규칙은 `harness-rules` 에 ID 로 두고, 거부 메시지가 같은 ID 를 인용한다.
+- 정적 규칙(`server/twbuild/gate.py`): T1 뷰 노드 ID 가 코드에 있다(`accessibilityIdentifier`/`testTag`) · T2 `if`·`list` 상태 키가 있다 · T3 `on_*` 핸들러의 Action 이 있다(리스트 안은 `<items><Handler>(item)`) ·
+  T4 트리 · 토큰에 없는 직접 색 리터럴이 없다 · T5 Route 집합 iOS = Android. 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
 
 ## 7. 팀 · 스킬
 
@@ -299,10 +304,10 @@ agents:
 |---|---|
 | `.claude-plugin/` | 매니페스트 |
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
-| `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 |
-| `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만 |
-| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI) · `twbuild/`: util · yaml_lite · config · leaks · git · probe(doctor) · contract · setup · metrics · graph(LangGraph) · router · server(MCP) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR`. 구조 초안 생성 · decide · 사이클 그래프는 다음 |
-| `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · 결정 주입(다음). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
+| `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 — 절차 · CSS→네이티브 번역표(두 플랫폼 같은 행 순서) · 빌드 환경 · 규칙 ID(T · H · D) |
+| `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만. `skills:` 로 코어 스킬 프리로드, `tools:` 에 claude-design · Agent 없음. 플러그인 에이전트 타입 `twbuild:ios-dev` |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI) · `twbuild/`: util · yaml_lite · config · leaks · git · probe(doctor) · contract · setup · metrics · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T5 · 빌드) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
+| `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · `decisions.py`(SubagentStart 에 기능의 결정 전부 · PreToolUse 에 새 결정만, `agent_id` 기준 중복 제거) · `agent_metrics.py`(SubagentStart→Stop 시간 · 트랜스크립트 usage 합산). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
 | `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
 | `tests/` | `run.sh` → `cases.py` (임시 레포 · 픽스처 `fixtures/mini.dc.html`) — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run |
 

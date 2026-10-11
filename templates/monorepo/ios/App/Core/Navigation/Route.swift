@@ -4,5 +4,6 @@ import Foundation
 /// The same list exists in Android `Route.kt`; the static gate compares the two.
 /// Push payloads (`screen` + `params`) map onto these cases.
 enum Route: Hashable {
+    case root
     // Screens are appended here by the build step, e.g. `case detail(id: String)`.
 }

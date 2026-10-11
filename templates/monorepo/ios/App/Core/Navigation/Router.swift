@@ -14,6 +14,8 @@ final class Router {
     @ViewBuilder
     func destination(for route: Route, container: AppContainer) -> some View {
         switch route {
+        case .root:
+            EmptyView()
         // Screens are appended here by the build step, e.g. `case .detail(let id): DetailView(...)`.
         default:
             EmptyView()

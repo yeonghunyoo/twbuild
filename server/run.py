@@ -159,8 +159,14 @@ def main():
         print(metrics.stats_table(root))
         return 0
     if a.cmd == "decide":
-        print("twbuild decide 는 사이클 그래프와 함께 붙는다 (다음 단계).", file=sys.stderr)
-        return 2
+        from twbuild import decide
+        try:
+            code, msg = decide.cli(a.args, os.getcwd() if a.root is None else root)
+        except decide.DecideError as e:
+            print(str(e), file=sys.stderr)
+            return 2
+        print(msg)
+        return code
     if a.cmd == "tokens":
         from twbuild import tokens
         files = tokens.write(root)

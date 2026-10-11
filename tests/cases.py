@@ -143,15 +143,20 @@ def setup_graph_end_to_end():
         check(all(e["ver"]["plugin"] and e["ver"]["config"] for e in evs), "ver 누락")
         table = metrics.stats_table(root)
         check("interview" in table and "setup" in table, table)
-        # 준비됨 → 라우터는 사이클로
+        # 준비됨 → 라우터는 사이클로 (intake 과제가 나온다 — 디자인이 없으니 features 는 빈 목록)
         out = router.advance(root)
-        check(out["graph"] == "cycle" and out.get("ready"), out)
+        check(out["graph"] == "cycle" and out["pending"]["task"] == "intake" and out["pending"]["features"] == [], out)
+        out = router.submit(root, {"feature": "nothing", "brief": "x"})
+        check(out["pending"]["task"] == "intake", "원장에 없는 기능은 다시 묻는다")
         # 사람이 고친 파일은 덮지 않는다 · 설정 변경은 셋업으로 돌아가 바뀐 부분만 다시
         route_swift = os.path.join(root, "apps/ios/App/Core/Navigation/Route.swift")
         util.write_text(route_swift, util.read_text(route_swift) + "\n// edited by developer\n")
         config.update(root, **{"min_os.android": 28})
         ok, reasons = probe.ready(root)
         check(not ok and any("설정 변경" in r for r in reasons), reasons)
+        # 사이클이 intake 에서 멈춰 있으면 라우터는 사이클을 먼저 준다 — 사이클을 끝내지 않은 채 설정을 바꾼 상황. 여기서는 intake 멈춤을 빈 제출로 두고 셋업을 보려면
+        # 멈춤이 없어야 하므로 사이클 thread 를 비운다
+        os.remove(util.tw(root, util.GRAPH_DB))
         out = router.advance(root)
         check(out["graph"] == "setup" and out.get("pending") is None and out.get("report"), out)
         check("edited by developer" in util.read_text(route_swift), "사람이 고친 파일을 덮었다")
@@ -409,6 +414,106 @@ def design_hooks():
         check(out is None and design.active(root)["listing"]["support.js"]["etag"] == "s7", design.active(root)["listing"])
         path, etag, body = design.decode_tool_text(wrapped)
         check(path == "mini.dc.html" and etag == "e9" and body == MINI, (path, etag, len(body), len(MINI)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+# ─────────────────────────── 사이클 그래프 ───────────────────────────
+
+def _git(root, *args):
+    return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True).stdout.strip()
+
+
+@case
+def cycle_graph_end_to_end():
+    from twbuild import cycle, decide
+    root = _wired_repo()
+    try:
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "setup")
+        design.start(root, "mini", "P1", ["mini.dc.html"])
+        design.capture(root, "mini.dc.html", MINI, "e1", "P1")
+        design.capture(root, "_ds/mini-ds/styles.css", MINI_CSS, "c1", "P1")
+        design.finish(root)
+        # intake
+        out = router.advance(root)
+        p = out["pending"]
+        check(out["graph"] == "cycle" and p["task"] == "intake" and p["features"] == ["mini"], out)
+        out = router.submit(root, {"feature": "mini", "brief": "- 홈 · 기록 · 믹서 시트"})
+        p = out["pending"]
+        check(p["task"] == "plan" and set(p["material"]["screens"]) == {"home", "stats", "sheet"}, p.get("task"))
+        check(p["material"]["screens"]["home"]["actions"] == ["itemsOpen", "setName"] and "title" in p["material"]["screens"]["home"]["state_fields"], p["material"]["screens"]["home"])
+        check(os.path.isfile(os.path.join(root, "features/mini/brief.md")), "brief")
+        # plan — 데이터 과제 + 화면 셋
+        out = router.submit(root, {"order": ["home", "stats", "sheet"], "data": ["Item"],
+                                   "plans": {"home": {"states": ["isHome", "showHero"], "data": ["Item"], "interactions": ["HOME-1: items open → sheet"]}}})
+        p = out["pending"]
+        check(p["task"] == "build" and p["job"]["id"] == "data", out.get("message"))
+        check(p["task"] == "build" and p["attempt"] == 1 and set(p["prompts"]) == {"ios", "android"}, p.get("task"))
+        check("Data task" in p["prompts"]["ios"] and "worktrees/ios-data" in p["prompts"]["ios"], p["prompts"]["ios"][:300])
+        check(os.path.isfile(os.path.join(root, ".twbuild/plans/mini/home.yaml")) and os.path.isfile(os.path.join(root, ".twbuild/plans/mini/_data.yaml")), "plans")
+        check(design.index(root)["screens"]["mini/home"]["status"] == "planned", "planned")
+        cur = util.read_json(util.tw(root, "tasks", "_current.json"))
+        check(cur["feature"] == "mini" and cur["task"]["id"] == "data", cur)
+        # 데이터 과제: 개발자가 아무것도 안 해도 (정적 못 잼 · 빌드 못 잼) 머지된다 — 변경이 없으니 커밋은 없다
+        out = router.submit(root, {"ios": {"status": "done", "summary": "repo"}, "android": {"status": "done", "summary": "repo"}})
+        p = out["pending"]
+        check(p["task"] == "build" and p["prompts"]["ios"].find("Layout tree") > 0 and "home" in p["prompts"]["ios"], out.get("message"))
+        check("data/mini/data" in _git(root, "tag"), _git(root, "tag"))
+        wt = p["worktrees"]["ios"]
+        check(os.path.isdir(wt) and os.path.isfile(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안")
+        check("draft(home)" in _git(wt, "log", "--oneline"), _git(wt, "log", "--oneline"))
+        check(design.index(root)["screens"]["mini/home"]["status"] == "building", "building")
+        # 개발자가 결정을 기록하면 원장과 rules 에 남는다 (워크트리 안에서 불러도 메인 레포에)
+        r, d, new = decide.record(wt, "n.home.column0.text1", "letter-spacing → tracking 0.5", "ios")
+        check(new and d["id"] == "D-01" and d["feature"] == "mini" and os.path.isfile(os.path.join(root, ".claude/rules/team/mini.md")), d)
+        r, d2, new = decide.record(p["worktrees"]["android"], "n.home.column0.text1", "something else", "android")
+        check(not new and d2["id"] == "D-01", "먼저 쓴 쪽이 이긴다")
+        check(decide.since(root, "mini", "")[0]["id"] == "D-01", "since")
+        # home: 초안 그대로 → 정적 통과 → 머지
+        out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
+        p = out["pending"]
+        check(p["task"] == "build" and p["job"]["id"] == "stats" and "stats" in p["prompts"]["ios"], out.get("message"))
+        log = _git(root, "log", "--oneline")
+        check("screen(mini/home): ios" in log and "screen(mini/home): android" in log and "screen/mini/home" in _git(root, "tag"), log)
+        check(design.index(root)["screens"]["mini/home"]["status"] == "consumed", design.index(root)["screens"]["mini/home"])
+        check(not os.path.isdir(wt), "워크트리 제거")
+        check(os.path.isfile(os.path.join(root, ".twbuild/reports/mini/home.md")) and "D-01" in util.read_text(os.path.join(root, ".twbuild/reports/mini/home.md")), "보고서에 결정")
+        res = util.read_json(os.path.join(root, ".twbuild/results/mini/home.json"))
+        check(res["pass"] and res["results"]["ios"]["static"]["status"] == "pass" and res["results"]["ios"]["static"]["violations"] == [], res["results"]["ios"]["static"])
+        # stats: android 가 blocked → blocked 멈춤 → submit({}) → 다시 배차 (attempt 2)
+        out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "blocked", "summary": "needs shared component"}})
+        p = out["pending"]
+        check(p["kind"] == "blocked" and p["reason"] == "developer blocked" and "BLOCKED" in out["message"], out.get("message"))
+        st = router.status(root)
+        check("blocked" in st["message"], st["message"])
+        out = router.submit(root, {})
+        p = out["pending"]
+        check(p["task"] == "build" and p["attempt"] == 2 and p["job"]["id"] == "stats", out.get("message"))
+        out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
+        p = out["pending"]
+        check(p["task"] == "build" and "sheet" in p["prompts"]["android"], out.get("message"))
+        # sheet: 정적 위반(ID 삭제) → 재작업 과제에 T1 이 실린다 → 되돌리면 통과 → 사이클 끝
+        wt = p["worktrees"]["ios"]
+        f = os.path.join(wt, "apps/ios/App/Features/Mini/Sheet/SheetView.swift")
+        orig = util.read_text(f)
+        util.write_text(f, orig.replace('.accessibilityIdentifier("n.sheet.group0")', ""))
+        out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
+        p = out["pending"]
+        check(p["task"] == "build" and p["attempt"] == 2 and "T1" in p["prompts"]["ios"] and "n.sheet.group0" in p["prompts"]["ios"], out.get("message"))
+        util.write_text(f, orig)
+        out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
+        check(out.get("pending") is None and "사이클 완료" in out.get("report", ""), out)
+        check(all(v["status"] == "consumed" for v in design.index(root)["screens"].values()), design.index(root)["screens"])
+        evs = metrics.events(root)
+        kinds = {e["ev"] for e in evs}
+        check({"smoke", "merged", "task_done"} <= kinds, kinds)
+        smokes = [e for e in evs if e["ev"] == "smoke" and e["task"] == "sheet"]
+        check(len(smokes) == 4 and any("T1" in (e.get("violations") or []) for e in smokes), smokes)
+        check(metrics.summary(root)["tasks"][("cycle", "build")]["count"] >= 6, metrics.summary(root)["tasks"])
+        # 다음 advance → 새 사이클의 intake
+        out = router.advance(root)
+        check(out["pending"]["task"] == "intake", out.get("message"))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

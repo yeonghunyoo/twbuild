@@ -1,5 +1,5 @@
 {
-  "description": "twbuild 훅 — 욜로 모드의 안전장치(guard.py H1~H7) · Claude Design 검문(design_guard.py D1~D5) · 디자인 캡처(design_capture.py).",
+  "description": "twbuild 훅 — 욜로 안전장치(guard.py H1~H7) · Claude Design 검문(design_guard.py D1~D5) · 디자인 캡처(design_capture.py) · 결정 주입(decisions.py) · 개발자 과제 측정(agent_metrics.py).",
   "hooks": {
     "PreToolUse": [
       {
@@ -23,6 +23,17 @@
             "statusMessage": "twbuild 디자인 검문"
           }
         ]
+      },
+      {
+        "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/decisions.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 10,
+            "statusMessage": "twbuild 결정 주입"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -34,6 +45,38 @@
             "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/design_capture.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
             "timeout": 20,
             "statusMessage": "twbuild 디자인 캡처"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/decisions.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 10,
+            "statusMessage": "twbuild 결정 주입"
+          },
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/agent_metrics.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 10,
+            "statusMessage": "twbuild 측정"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/agent_metrics.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 20,
+            "statusMessage": "twbuild 측정"
           }
         ]
       }

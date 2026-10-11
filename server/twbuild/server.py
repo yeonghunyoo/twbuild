@@ -7,7 +7,7 @@ import os
 
 from mcp.server.mcpserver import MCPServer
 
-from . import leaks, probe, router
+from . import design, leaks, probe, router, util
 
 ROOT = os.path.abspath(os.environ.get("TWBUILD_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -46,6 +46,47 @@ def submit(payload: dict) -> dict:
 def doctor() -> dict:
     """Pre-flight check of this repo and machine (toolchains, git, config, contract, readiness) as a Korean markdown table for the user."""
     return _out({"ok": True, "markdown": probe.doctor_markdown(ROOT)})
+
+
+def _design(fn):
+    try:
+        return _out(fn())
+    except design.DesignError as e:
+        return {"ok": False, "message": str(e)}
+
+
+@mcp.tool()
+def design_start(feature: str, project_id: str, screens: list, ds_project_id: str = "", bootstrap: bool = False) -> dict:
+    """Open a design run for `feature`: afterwards the Claude Design connector may read the listed .dc.html screens (plus what they reference and the design-system files) — the hooks capture them into design/. bootstrap=true also allows the design-system catalog (first cycle)."""
+    return _design(lambda: {"ok": True, "run": design.start(ROOT, feature, project_id, screens, ds_project_id or None, bootstrap=bootstrap),
+                            "message": "Run opened. Read the screen files with the connector (read_file); then design_trial, confirm screen ids with the user, design_finish(spec)."})
+
+
+@mcp.tool()
+def design_trial(spec: list | None = None) -> dict:
+    """Dry run over the captured .dc.html of the active run: detected screens (id · kind · when · style) and per-screen tree status. Pass `spec` (edited screens list) to see the effect of renames."""
+    def go():
+        run = design.active(ROOT)
+        if not run:
+            raise design.DesignError("No active design run — call design_start first.")
+        out = []
+        for f in run["files"]:
+            if f["path"].endswith(".dc.html"):
+                out.append({"file": f["dest"], **design.trial(ROOT, util.read_text(os.path.join(ROOT, f["dest"]), ""), spec)})
+        return {"ok": True, "trials": out, "message": "Confirm the screen ids with the user (rename with spec), then design_finish(spec)."}
+    return _design(go)
+
+
+@mcp.tool()
+def design_finish(spec: list | None = None) -> dict:
+    """Close the active design run: write layout trees and tokens, update the ledger, commit + tag `design-run/R-000N`. `spec` = the confirmed screens list from design_trial (ids may be renamed)."""
+    return _design(lambda: {"ok": True, **design.finish(ROOT, spec), "message": "Design run finished. Continue the cycle: submit the intake task."})
+
+
+@mcp.tool()
+def design_abort() -> dict:
+    """Abort the active design run (nothing captured is committed)."""
+    return _design(lambda: {"ok": True, "run": design.abort(ROOT)})
 
 
 def main():
