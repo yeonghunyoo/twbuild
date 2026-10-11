@@ -1,0 +1,15 @@
+# twbuild 설정 — AGENT.md "설정". 바꾼 뒤 /twbuild 를 다시 실행하면 바뀐 부분만 다시 돈다.
+platforms: {{platforms}}         # 툴체인 실측으로 정했다. ios · android
+architecture: mvvm-udf           # 첫 머지 뒤 잠김
+min_os: {ios: 17, android: 26}   # @Observable = iOS 17+. 첫 머지 뒤 잠김
+app: {name: "", product: "", id: ""}   # interview 가 채운다. id 는 이름에서 생성 (첫 머지 뒤 잠김)
+auth: {providers: [email, apple, google]}
+smoke: {device: merge}           # every | merge | off
+budget: {attempts_per_screen: 5}
+design:
+  fetch: {include: [], exclude: [], max_bytes: 262144}
+setup: {build: true}             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드
+agents:
+  lead:    {skills: [archify]}
+  ios:     {model: sonnet, skills: [swiftui-expert, swift-concurrency, swift-security, authentication, push-notifications, app-store-review]}
+  android: {model: sonnet, skills: [jetpack-compose, compose-state-and-effects, kotlin-concurrency-and-flow, security, identity, navigation, play, edge-to-edge]}

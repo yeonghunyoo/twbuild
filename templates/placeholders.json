@@ -1,0 +1,16 @@
+{
+  "placeholders": [
+    {"key": "API_BASE_URL", "kind": "env", "desc": "백엔드 주소. 비우면 mock 서버", "where": "백엔드 배포 뒤", "required": false,
+     "default": "http://localhost:8787", "blocks": "실서버 연동"},
+    {"key": "APPLE_TEAM_ID", "kind": "env", "desc": "Apple Developer Team ID (실기기 · 배포)", "where": "developer.apple.com → Membership",
+     "required": false, "default": "", "blocks": "iOS 실기기 설치 · 배포", "when": {"platform": "ios"}},
+    {"key": "GOOGLE_OAUTH_CLIENT_ID_IOS", "kind": "env", "desc": "Google 로그인 iOS 클라이언트 ID", "where": "console.cloud.google.com → 사용자 인증 정보",
+     "required": false, "default": "", "blocks": "iOS Google 로그인", "when": {"platform": "ios", "provider": "google"}},
+    {"key": "GOOGLE_OAUTH_CLIENT_ID_ANDROID", "kind": "env", "desc": "Google 로그인 Android 클라이언트 ID", "where": "console.cloud.google.com → 사용자 인증 정보",
+     "required": false, "default": "", "blocks": "Android Google 로그인", "when": {"platform": "android", "provider": "google"}},
+    {"key": "GoogleService-Info.plist", "kind": "file", "path": "apps/ios/App/GoogleService-Info.plist", "desc": "Firebase iOS 설정 (FCM 푸시)",
+     "where": "console.firebase.google.com → 프로젝트 설정 → iOS 앱", "required": false, "blocks": "iOS 푸시", "when": {"platform": "ios"}},
+    {"key": "google-services.json", "kind": "file", "path": "apps/android/app/google-services.json", "desc": "Firebase Android 설정 (FCM 푸시)",
+     "where": "console.firebase.google.com → 프로젝트 설정 → Android 앱", "required": false, "blocks": "Android 푸시", "when": {"platform": "android"}}
+  ]
+}

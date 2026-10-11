@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# twbuild CLI — Bash 도구의 PATH 에 실린다 (플러그인 bin/). 서버 런처(run.py)로 넘긴다.
+# Bash 도구에는 CLAUDE_PLUGIN_ROOT 가 없어서 자기 위치로 플러그인 루트를 찾는다.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$here/../server/run.py" "$@"

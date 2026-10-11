@@ -1,0 +1,116 @@
+# 인증 (기본) — Bearer · /auth/* · 401 규약. `# provider: <이름>` 블록은 config auth.providers 에 없으면 빠진다. 셋업 소유 — 손으로 고치지 않는다.
+security:
+  - bearerAuth: []
+paths:
+  # provider: email
+  /auth/login:
+    post:
+      operationId: login
+      summary: Sign in with email and password
+      tags: [auth]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/LoginRequest"}}}}
+      responses:
+        "200": {description: Token pair, content: {application/json: {schema: {$ref: "#/components/schemas/TokenPair"}, example: {accessToken: "eyJ.access.token", refreshToken: "eyJ.refresh.token", expiresIn: 3600}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /auth/signup:
+    post:
+      operationId: signup
+      summary: Create an account with email and password
+      tags: [auth]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/LoginRequest"}}}}
+      responses:
+        "201": {description: Token pair, content: {application/json: {schema: {$ref: "#/components/schemas/TokenPair"}, example: {accessToken: "eyJ.access.token", refreshToken: "eyJ.refresh.token", expiresIn: 3600}}}}
+        "409": {description: Email already registered, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}, example: {code: conflict, message: "email already registered"}}}}
+  # provider-end
+  # provider: apple
+  /auth/apple:
+    post:
+      operationId: loginWithApple
+      summary: Sign in with Apple (identity token)
+      tags: [auth]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/IdTokenRequest"}}}}
+      responses:
+        "200": {description: Token pair, content: {application/json: {schema: {$ref: "#/components/schemas/TokenPair"}, example: {accessToken: "eyJ.access.token", refreshToken: "eyJ.refresh.token", expiresIn: 3600}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  # provider-end
+  # provider: google
+  /auth/google:
+    post:
+      operationId: loginWithGoogle
+      summary: Sign in with Google (ID token)
+      tags: [auth]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/IdTokenRequest"}}}}
+      responses:
+        "200": {description: Token pair, content: {application/json: {schema: {$ref: "#/components/schemas/TokenPair"}, example: {accessToken: "eyJ.access.token", refreshToken: "eyJ.refresh.token", expiresIn: 3600}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  # provider-end
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      summary: Exchange a refresh token for a new token pair
+      tags: [auth]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/RefreshRequest"}}}}
+      responses:
+        "200": {description: Token pair, content: {application/json: {schema: {$ref: "#/components/schemas/TokenPair"}, example: {accessToken: "eyJ.access.token", refreshToken: "eyJ.refresh.token", expiresIn: 3600}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke the current refresh token
+      tags: [auth]
+      responses:
+        "204": {description: Logged out}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /auth/account:
+    delete:
+      operationId: deleteAccount
+      summary: Delete the signed-in account
+      tags: [auth]
+      responses:
+        "204": {description: Deleted}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  responses:
+    Unauthorized:
+      description: Access token missing, expired or revoked — refresh once, then sign out
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {code: unauthorized, message: "token expired"}
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email, example: user@example.com}
+        password: {type: string, format: password, example: correct-horse}
+    IdTokenRequest:
+      type: object
+      required: [idToken]
+      properties:
+        idToken: {type: string, example: "eyJ.id.token"}
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: {type: string, example: "eyJ.refresh.token"}
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        accessToken: {type: string, example: "eyJ.access.token"}
+        refreshToken: {type: string, example: "eyJ.refresh.token"}
+        expiresIn: {type: integer, description: Seconds until accessToken expires, example: 3600}
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string, example: unauthorized}
+        message: {type: string, example: "token expired"}

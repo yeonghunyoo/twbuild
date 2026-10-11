@@ -1,0 +1,18 @@
+{
+  "description": "twbuild 차단 훅 — 욜로 모드의 안전장치. 원격 push · 이력 재작성 · 레포 밖 쓰기 · 보호 구역 · 민감 파일 · 설치 · Claude Design 쓰기를 막는다 (거부 사유에 규칙 ID).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|Bash|^mcp__.*claude[-_]design",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"; [ -f \"$f\" ] || exit 0; exec python3 \"$f\"",
+            "timeout": 10,
+            "statusMessage": "twbuild 검문"
+          }
+        ]
+      }
+    ]
+  }
+}

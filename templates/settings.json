@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(twbuild *)",
+      "Bash(xcodegen *)",
+      "Bash(xcodebuild *)",
+      "Bash(xcrun *)",
+      "Bash(./gradlew *)",
+      "Bash(gradle *)",
+      "Bash(swift build*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git rebase*)",
+      "Bash(git reset --hard*)",
+      "Bash(git filter-branch*)",
+      "Bash(sudo *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.p8)",
+      "Read(./**/*.p12)",
+      "Read(./**/*.jks)",
+      "Read(./**/*.keystore)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+# {{name}} API — 계약 본문. 사이클의 plan 이 고친다. 기본 구성(인증 · 푸시 · 오프라인)은 api/fragments/ 에 있고 코드 생성이 합친다.
+openapi: 3.0.3
+info:
+  title: "{{name}} API"
+  version: "0.1.0"
+servers:
+  - url: http://localhost:8787
+    description: mock
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      tags: [system]
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Health"}
+              example: {status: ok}
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, example: ok}

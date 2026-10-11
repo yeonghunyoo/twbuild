@@ -1,0 +1,23 @@
+# twbuild (도구 상태 · 로컬 · 민감 파일은 커밋하지 않는다 — 예시는 .example 로)
+.twbuild/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+features/*/refs/
+apps/ios/*.xcodeproj
+apps/ios/DerivedData/
+apps/android/.gradle/
+apps/android/build/
+apps/android/*/build/
+apps/android/local.properties
+.claude/settings.local.json
+.DS_Store

@@ -1,0 +1,28 @@
+# xcodegen 스펙 — 이 파일이 프로젝트의 정본이고 .xcodeproj 는 생성물(gitignore)이다. `xcodegen generate` 로 만든다.
+name: {{product}}
+options:
+  bundleIdPrefix: {{id_prefix}}
+  deploymentTarget:
+    iOS: "{{min_ios}}.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  {{product}}:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: {{id}}
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_CFBundleDisplayName: "{{name}}"
+        SWIFT_STRICT_CONCURRENCY: complete

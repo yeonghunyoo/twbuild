@@ -9,7 +9,9 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
 
 ## 현재 상태 · 다음 할 일
 
-- 설계 초안 v0.0.1 (2026-10-11). 코드 없음. PoC 1~3 확인. 플러그인 매니페스트만 있어 설치는 되지만 기능은 없다.
+- M1 뼈대 완료 (2026-10-11) — 서버(`server/twbuild/`: 라우터 · 셋업 그래프 · probe=doctor · wire · interview · scaffold · selfcheck · report · 측정 · 계약 합치기) · MCP(`status/advance/submit/doctor`) · CLI(`bin/twbuild`) · 차단 훅(`hooks/guard.py` H1~H7) · 스킬(`twbuild` · `setup`) · 골격 템플릿(iOS xcodegen · Android Gradle, 둘 다 빈 골격 빌드 통과) · 테스트(`tests/run.sh`, 8개).
+  실측과 다른 설계는 코드에 맞춰 둠: bypass 는 프로젝트 설정으로 못 켬(wire 는 allow/deny 만 씀, doctor 가 안내) · venv 는 `~/.claude/plugins/data/twbuild/venv` · 루트는 `CLAUDE_PROJECT_DIR` · interview 에 조건부 `ascii_name`. AGENT.md 갱신은 M2 뒤 한 번에.
+- 미구현: 사이클 그래프(intake → merge) · 에이전트 · 개발자 스킬 · 디자인 훅 · `decide` · 공개 스킬 설치(설정만 있음) · Swift/Kotlin 계약 코드 생성 · mock 서버.
 - 2026-10-11 단순화: 핵심(디자인 정본 → 레이아웃 트리 → 구조 초안 → iOS ∥ AOS → 게이트 3층)만 남기고 나머지는 AGENT.md "나중에".
   지시 관리는 "정본 > 과제 프롬프트 > 나머지" 세 줄로 확정.
 - 측정 확정 (2026-10-11) — 구간별 시간 · 시도 · 토큰 지표, 래퍼 · 훅에서 기록(노드 안 금지), `twbuild stats` 터미널 표만. AGENT.md 13장.

@@ -1,0 +1,24 @@
+# 오프라인 동기화 (기본) — 모든 컬렉션은 클라이언트 생성 UUID id · updatedAt · deletedAt 을 갖고, 목록은 ?since= 로 증분, 쓰기는 Idempotency-Key.
+# 충돌: 서버 updatedAt 기준 마지막 쓰기 우선. plan 이 컬렉션 스키마를 만들 때 SyncMeta 를 allOf 로 섞는다. 셋업 소유 — 손으로 고치지 않는다.
+components:
+  parameters:
+    Since:
+      name: since
+      in: query
+      required: false
+      description: Return items changed after this instant (inclusive of tombstones)
+      schema: {type: string, format: date-time, example: "2026-01-01T00:00:00Z"}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated UUID per write — retries with the same key are no-ops
+      schema: {type: string, format: uuid, example: "3d1f8c2a-5e7b-4a9d-8c6f-1b2e3d4f5a6b"}
+  schemas:
+    SyncMeta:
+      type: object
+      required: [id, updatedAt]
+      properties:
+        id: {type: string, format: uuid, description: Client-generated, example: "7f3c9a2e-1b4d-4c6e-9f0a-2d8b5e7c1a3f"}
+        updatedAt: {type: string, format: date-time, example: "2026-01-01T00:00:00Z"}
+        deletedAt: {type: string, format: date-time, nullable: true, description: Tombstone, example: null}

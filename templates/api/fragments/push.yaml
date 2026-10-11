@@ -1,0 +1,44 @@
+# 푸시 (기본) — 기기 등록 · payload 딥링크 규약 (screen + params). FCM 하나로 양쪽. 셋업 소유 — 손으로 고치지 않는다.
+paths:
+  /devices:
+    post:
+      operationId: registerDevice
+      summary: Register a push token for the signed-in user
+      tags: [push]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/DeviceRegistration"}}}}
+      responses:
+        "201": {description: Registered, content: {application/json: {schema: {$ref: "#/components/schemas/Device"}, example: {id: "7f3c9a2e-1b4d-4c6e-9f0a-2d8b5e7c1a3f", platform: ios, token: "fcm-token", updatedAt: "2026-01-01T00:00:00Z"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /devices/{deviceId}:
+    delete:
+      operationId: unregisterDevice
+      summary: Remove a push token (sign-out or uninstall)
+      tags: [push]
+      parameters:
+        - {name: deviceId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "204": {description: Removed}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+components:
+  schemas:
+    DeviceRegistration:
+      type: object
+      required: [platform, token]
+      properties:
+        platform: {type: string, enum: [ios, android], example: ios}
+        token: {type: string, description: FCM registration token, example: fcm-token}
+    Device:
+      type: object
+      required: [id, platform, token, updatedAt]
+      properties:
+        id: {type: string, format: uuid, example: "7f3c9a2e-1b4d-4c6e-9f0a-2d8b5e7c1a3f"}
+        platform: {type: string, enum: [ios, android], example: ios}
+        token: {type: string, example: fcm-token}
+        updatedAt: {type: string, format: date-time, example: "2026-01-01T00:00:00Z"}
+    PushPayload:
+      type: object
+      description: Data payload of every push — the app opens `screen` with `params` (deep link)
+      required: [screen]
+      properties:
+        screen: {type: string, description: Route name, example: detail}
+        params: {type: object, additionalProperties: {type: string}, example: {id: "7f3c9a2e-1b4d-4c6e-9f0a-2d8b5e7c1a3f"}}
