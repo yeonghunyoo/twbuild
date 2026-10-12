@@ -22,7 +22,7 @@ claude plugin install twbuild@twbuild
 2. 다시 `/twbuild` — 기능 하나가 한 사이클이다. 디자인을 처음 들여오면 lead 가 Claude Design 프로젝트 · 화면을 묻고 받아 레이아웃 트리를 만든다(화면 후보를 확인해 이름을 정한다). plan 뒤 데이터 과제 → 화면마다 iOS ∥ Android 개발자가 각자의 워크트리에서 구조 초안 위에 구현한다.
 3. 스모크(정적 트리 정합성 T1~T6 + 두 플랫폼 빌드)를 통과하면 화면 단위로 squash 머지 · 태그 · 증거 보고서. 실패하면 위반 · 로그 꼬리가 실린 재작업 과제가 자동으로 나간다(화면당 5회).
 4. 측정은 `twbuild stats` 터미널 표 — 노드 · 과제 처리 시간 · 화면별 시도 · 빌드 · 기기 · 위반 · 개발자 과제 시간 · 토큰. `--feature <기능>` 은 기능 요약, `--compare` 는 기능별 한 줄(노드당 정규화 · 플러그인 버전) — 머지가 `.twbuild/metrics/cycles/<기능>.json` 을 커밋한다.
-5. 그 외 CLI: `twbuild scan [--staged]`(시크릿 검사 — pre-commit 훅이 부른다) · `twbuild mock [--port 8787]`(계약 예시로 응답하는 mock 서버) · `twbuild device ios|android`(기기 층만 다시) · `twbuild skills [install]`(공개 스킬 상태 · 설치) · `twbuild gen`(계약 → 클라이언트 재생성).
+5. 그 외 CLI: `twbuild scan [--staged]`(시크릿 검사 — pre-commit 훅이 부른다) · `twbuild mock [--port 8787]`(계약 예시로 응답하는 mock 서버) · `twbuild device ios|android`(기기 층만 다시) · `twbuild skills [install]`(공개 스킬 상태 · 설치) · `twbuild gen`(계약 → 클라이언트 재생성) · `twbuild fonts [fetch|install|status]`(웹폰트) · `twbuild check [--build]`(개발자가 워크트리에서 돌리는 정적 게이트 T1~T10 · 패리티).
 
 권한: 욜로(bypass) 모드를 권하지만 프로젝트 설정으로는 켤 수 없다 — `claude --permission-mode bypassPermissions` 또는 `~/.claude/settings.json`. 위험 동작(push · 이력 재작성 · 레포 밖 쓰기 · 보호 구역 · 시크릿 · 설치 · Claude Design 쓰기)은 훅이 차단한다. 시크릿 값은 `twbuild init` 으로 `.env.local` 틀만 만들고 에디터로 채운다.
 
