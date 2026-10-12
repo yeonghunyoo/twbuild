@@ -260,11 +260,15 @@ class TokenMap:
         return " ".join(parts)
 
 
+SVG_D_CAP = 4000
+SVG_SHAPE_ATTRS = ("cx", "cy", "r", "rx", "ry", "x", "y", "x1", "y1", "x2", "y2", "width", "height", "points")
+
+
 class _Node:
-    __slots__ = ("tag", "attrs", "children", "text", "paths")
+    __slots__ = ("tag", "attrs", "children", "text", "paths", "svg")
 
     def __init__(self, tag, attrs):
-        self.tag, self.attrs, self.children, self.text, self.paths = tag, dict(attrs), [], [], 0
+        self.tag, self.attrs, self.children, self.text, self.paths, self.svg = tag, dict(attrs), [], [], 0, []
 
 
 class _Parser(htmlparser.HTMLParser):
@@ -279,6 +283,11 @@ class _Parser(htmlparser.HTMLParser):
             for n in reversed(self.stack):
                 if n.tag == "svg":
                     n.paths += 1
+                    a = dict(attrs)
+                    if tag == "path" and a.get("d"):                   # 경로 데이터 — 두 플랫폼이 같은 아이콘을 그리게 (해시에는 안 들어간다)
+                        n.svg.append(str(a["d"])[:SVG_D_CAP])
+                    elif tag in ("circle", "rect", "line", "polyline", "polygon", "ellipse"):
+                        n.svg.append(tag + "(" + " ".join(f"{k}={v}" for k, v in a.items() if k in SVG_SHAPE_ATTRS) + ")")
                     break
             if tag in ("g", "defs"):
                 self.stack.append(_Node(tag, attrs))
@@ -366,6 +375,8 @@ def _node_json(n, tm, slots):
         out["kind"] = "icon"
         out["icon"] = "raw-svg"
         out["paths"] = n.paths
+        if n.svg:
+            out["svg"] = list(n.svg)                      # 경로 · 도형 데이터 — 해시에서 빠진다 (구조가 아니라 그림)
         for k in ("width", "height", "viewbox"):
             if k in n.attrs:
                 out[k] = n.attrs[k]
@@ -468,8 +479,17 @@ def layout(markup, spec, all_specs, tm, source="", frame=None):
         _assign_ids(root, f"n.{spec['id']}")
     out = {"screen": spec["id"], "kind": spec.get("kind", "state"), "when": spec.get("when") or [], "style": spec.get("style") or [],
            "source": source, "frame": frame, "root": root}
-    out["hash"] = util.sha_text(util.stable_json({k: v for k, v in out.items() if k not in ("hash", "source", "frame")}))[:12]
+    out["hash"] = util.sha_text(util.stable_json(_hashable({k: v for k, v in out.items() if k not in ("hash", "source", "frame")})))[:12]
     return out
+
+
+def _hashable(n):
+    """해시 재료 — 노드의 svg(그림 데이터)는 뺀다. 같은 구조 = 같은 해시."""
+    if isinstance(n, dict):
+        return {k: _hashable(v) for k, v in n.items() if k != "svg"}
+    if isinstance(n, list):
+        return [_hashable(v) for v in n]
+    return n
 
 
 def status(lay):

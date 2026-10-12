@@ -185,6 +185,120 @@ def data_parity_check(ios_base, android_base, vars_):
     return {"status": "fail", "violations": [{"rule": "T6", "detail": f"data types differ — ios only: {sorted(a - b)}, android only: {sorted(b - a)}"}]}
 
 
+def _block(text, head_rx, open_ch, close_ch):
+    """head_rx 가 가리키는 선언의 본문(괄호 안) — 없으면 None."""
+    m = re.search(head_rx, text, re.M)
+    if not m:
+        return None
+    i = text.find(open_ch, m.end())
+    if i < 0:
+        return None
+    depth, j = 0, i
+    while j < len(text):
+        if text[j] == open_ch:
+            depth += 1
+        elif text[j] == close_ch:
+            depth -= 1
+            if depth == 0:
+                return text[i + 1:j]
+        j += 1
+    return None
+
+
+_TYPE_MAP = {"bool": "bool", "boolean": "bool", "int": "int", "long": "int", "double": "double", "float": "float", "cgfloat": "double",
+             "string": "string", "color": "color", "uuid": "string"}
+
+
+def norm_type(t):
+    """플랫폼 타입 → 비교용 — Bool·Boolean, [X]·List<X>, X?·X? 를 같게."""
+    t = re.sub(r"\s+", "", t or "")
+    opt = t.endswith("?")
+    t = t.rstrip("?")
+    m = re.match(r"^\[(.+)\]$", t) or re.match(r"^(?:List|Array|MutableList)<(.+)>$", t)
+    if m:
+        return f"list<{norm_type(m.group(1))}>" + ("?" if opt else "")
+    return _TYPE_MAP.get(t.lower(), t.lower()) + ("?" if opt else "")
+
+
+def _swift_state(text, S):
+    body = _block(text, rf"^\s*(?:public\s+|internal\s+)?struct\s+{re.escape(S)}UiState\b", "{", "}")
+    if body is None:
+        return None
+    return {m.group(1): norm_type(m.group(2)) for m in re.finditer(r"^\s*(?:var|let)\s+(\w+)\s*:\s*([^=\n{]+?)\s*(?:=|$)", _strip_comments(body), re.M)}
+
+
+def _kt_state(text, S):
+    body = _block(text, rf"^\s*(?:data\s+)?class\s+{re.escape(S)}UiState\b", "(", ")")
+    if body is None:
+        return None
+    out = {m.group(1): norm_type(m.group(2)) for m in re.finditer(r"\bva[lr]\s+(\w+)\s*:\s*([^=,\n]+)", _strip_comments(body))}
+    if list(out) == ["placeholder"]:
+        return {}                                        # 필드가 없을 때의 자리표시
+    return out
+
+
+def _swift_actions(text, S):
+    body = _block(text, rf"^\s*(?:public\s+|internal\s+)?enum\s+{re.escape(S)}Action\b", "{", "}")
+    if body is None:
+        return None
+    out = {}
+    for m in re.finditer(r"^\s*case\s+([^\n]+)", _strip_comments(body), re.M):
+        for part in re.split(r",\s*(?![^()]*\))", m.group(1)):         # case a, b(T) 를 나눈다
+            pm = re.match(r"\s*(\w+)(?:\(([^)]*)\))?", part)
+            if pm:
+                out[pm.group(1).lower()] = [norm_type(p.split(":")[-1]) for p in pm.group(2).split(",")] if pm.group(2) else []
+    return out
+
+
+def _kt_actions(text, S):
+    body = _block(text, rf"^\s*sealed\s+(?:interface|class)\s+{re.escape(S)}Action\b", "{", "}")
+    if body is None:
+        return None
+    out = {}
+    for m in re.finditer(r"\b(?:data\s+)?(?:class|object)\s+(\w+)(?:\(([^)]*)\))?", _strip_comments(body)):
+        params = [norm_type(p.split(":")[-1]) for p in m.group(2).split(",") if p.strip()] if m.group(2) else []
+        out[m.group(1).lower()] = params
+    return out
+
+
+def _screen_sources(base, platform, vars_, feature, screen):
+    F, S = util.pascal(feature), util.pascal(screen)
+    if platform == "ios":
+        d = os.path.join(base, "apps/ios/App/Features", F, S)
+    else:
+        feat = re.sub(r"[^a-z0-9]", "", feature.lower())
+        d = os.path.join(base, "apps/android/app/src/main/kotlin", vars_["id"].replace(".", "/"), "features", feat, screen.lower())
+    texts = []
+    if os.path.isdir(d):
+        for bd, _, files in os.walk(d):
+            for n in files:
+                if n.endswith((".swift", ".kt")):
+                    texts.append(util.read_text(os.path.join(bd, n), ""))
+    return "\n".join(texts)
+
+
+def state_parity_check(ios_base, android_base, vars_, feature, screen):
+    """T10 — 화면의 UiState 필드(이름 · 타입)와 Action(이름 · 매개변수 타입)이 iOS = Android. 한쪽에 없으면 못 잼."""
+    S = util.pascal(screen)
+    a, b = _screen_sources(ios_base, "ios", vars_, feature, screen), _screen_sources(android_base, "android", vars_, feature, screen)
+    sa, sb = _swift_state(a, S), _kt_state(b, S)
+    aa, ab = _swift_actions(a, S), _kt_actions(b, S)
+    if sa is None or sb is None or aa is None or ab is None:
+        return {"status": "unmeasured", "violations": [], "detail": "UiState · Action 선언을 양쪽에서 못 찾았다"}
+    v = []
+    for name in sorted(set(sa) ^ set(sb)):
+        v.append({"rule": "T10", "detail": f"UiState field only on {'ios' if name in sa else 'android'}: {name}"})
+    for name in sorted(set(sa) & set(sb)):
+        if sa[name] != sb[name]:
+            v.append({"rule": "T10", "detail": f"UiState field type differs: {name} — ios {sa[name]} · android {sb[name]}"})
+    for name in sorted(set(aa) ^ set(ab)):
+        v.append({"rule": "T10", "detail": f"Action only on {'ios' if name in aa else 'android'}: {name}"})
+    for name in sorted(set(aa) & set(ab)):
+        if aa[name] != ab[name]:
+            v.append({"rule": "T10", "detail": f"Action parameter types differ: {name} — ios {aa[name]} · android {ab[name]}"})
+    return {"status": "fail" if v else "pass", "violations": v}
+
+
 def parity_check(ios_base, android_base, vars_):
     a, b = routes(ios_base, "ios", vars_), routes(android_base, "android", vars_)
     if a == b:

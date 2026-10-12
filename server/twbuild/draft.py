@@ -266,7 +266,8 @@ def _swift_node(n, an, scope, depth, out, wrapped=False):
     elif k == "text":
         out.append(f"{pad}Text({_text_expr(n, scope, 'swift', an)})")
     elif k == "icon":
-        out.append(f"{pad}Image(systemName: \"circle\")  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}) — replace with the asset")
+        out.append(f"{pad}Image(systemName: \"circle\")  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}, viewBox {n.get('viewbox', '?')}) — draw this path data (same on both platforms)")
+        out += [f"{pad}// svg: {d}" for d in n.get("svg") or []]
     elif k == "image":
         out.append(f"{pad}Image({_quote(str(n.get('src') or ''))})")
     elif k == "input":
@@ -475,7 +476,8 @@ def _kt_node(n, an, scope, depth, out, in_lazy=False, wrapped=False):
     elif k == "text":
         out.append(f"{pad}Text(text = {_text_expr(n, scope, 'kt', an)}, modifier = {m})")
     elif k == "icon":
-        out.append(f"{pad}Box(modifier = {m}.size(24.dp))  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}) — replace with the asset")
+        out.append(f"{pad}Box(modifier = {m}.size(24.dp))  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}, viewBox {n.get('viewbox', '?')}) — draw this path data (same on both platforms)")
+        out += [f"{pad}// svg: {d}" for d in n.get("svg") or []]
     elif k == "image":
         out.append(f"{pad}Box(modifier = {m})  // image: {n.get('src')}")
     elif k == "input":

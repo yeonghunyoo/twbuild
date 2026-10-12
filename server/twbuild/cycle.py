@@ -381,8 +381,11 @@ def static_results(root, feature, task, wts, cfg):
     if len(both) == 2:
         par = gate.parity_check(wts["ios"], wts["android"], vars_)
         fp = fonts.parity(wts["ios"], cfg)                                   # T9 — 폰트 등록은 하네스가 main 에서 하므로 어느 워크트리든 같다
-        for extra in (gate.data_parity_check(wts["ios"], wts["android"], vars_), gate.ds_parity_check(wts["ios"], wts["android"], vars_),
-                      {"status": "fail" if fp else "pass", "violations": fp}):   # T6 · T7 · T9
+        extras = [gate.data_parity_check(wts["ios"], wts["android"], vars_), gate.ds_parity_check(wts["ios"], wts["android"], vars_),
+                  {"status": "fail" if fp else "pass", "violations": fp}]        # T6 · T7 · T9
+        if task["kind"] == "screen":
+            extras.append(gate.state_parity_check(wts["ios"], wts["android"], vars_, feature, task["id"]))   # T10 — UiState · Action 이름 · 타입
+        for extra in extras:
             if extra["status"] == "fail":
                 par = {"status": "fail", "violations": par["violations"] + extra["violations"]}
         for p in res:

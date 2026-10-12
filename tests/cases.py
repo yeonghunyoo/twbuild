@@ -289,6 +289,15 @@ def tree_detect_and_layout():
     check(specs[2]["style"] == ["backdropStyle", "sheetStyle"], specs[2])
     tm = tree.TokenMap(tokens.tokens(MINI_CSS))
     lay = tree.layout(markup, specs[0], specs, tm, source="x.dc.html", frame=frame)
+    icons = []
+    def _walk(n):
+        if n.get("kind") == "icon":
+            icons.append(n)
+        for c in n.get("children") or []:
+            _walk(c)
+    _walk(lay["root"])
+    check(icons and any(n.get("svg") == ["M7 4.5v15"] for n in icons), [n.get("svg") for n in icons])     # raw-svg 경로 데이터 (두 플랫폼이 같은 아이콘)
+    check('"svg":' not in util.stable_json(tree._hashable(lay)) and '"svg":' in util.stable_json(lay), "svg 는 해시에 안 들어간다")
     root = lay["root"]
     check(root["kind"] == "if" and root["when"] == "isHome" and root["default"] == "true" and root["id"] == "n.home", root)
     col = root["children"][0]
@@ -487,6 +496,20 @@ def cycle_graph_end_to_end():
         check(os.path.isdir(wt) and os.path.isfile(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안")
         check("draft(home)" in _git(wt, "log", "--oneline"), _git(wt, "log", "--oneline"))
         check("Card {" in util.read_text(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안이 class 노드를 카탈로그 컴포넌트로 감싼다")
+        check("// svg: M7 4.5v15" in util.read_text(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안 아이콘 주석에 경로 데이터")
+        # T10 — 생성기가 만든 UiState · Action 은 양쪽이 같다; 한쪽 타입을 바꾸면 잡힌다
+        from twbuild import gate
+        vars_ = config.app_vars(config.load(root))
+        wa = p["worktrees"]["android"]
+        sp = gate.state_parity_check(wt, wa, vars_, "mini", "home")
+        check(sp["status"] == "pass", sp)
+        kt = os.path.join(wa, f"apps/android/app/src/main/kotlin/{pkg}/features/mini/home/HomeUiState.kt")
+        orig = util.read_text(kt)
+        check("val title: String" in orig, orig[:300])
+        util.write_text(kt, orig.replace("val title: String", "val title: Int", 1))
+        sp = gate.state_parity_check(wt, wa, vars_, "mini", "home")
+        check(sp["status"] == "fail" and any("title" in v["detail"] and v["rule"] == "T10" for v in sp["violations"]), sp)
+        util.write_text(kt, orig)
         from twbuild import cycle
         code, text = cycle.check_cli(wt)                      # 개발자용 게이트 — 워크트리에서 부르면 그 플랫폼, 초안 그대로면 통과
         check(code == 0 and "[ios] 정적 pass" in text and "패리티" in text, (code, text))
