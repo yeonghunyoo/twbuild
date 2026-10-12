@@ -1,6 +1,6 @@
 ---
 name: harness-rules
-description: Rule IDs of the twbuild harness that gates and hooks cite — tree parity rules (T1–T6), hook blocks (H1–H7), design-import rules (D1–D5). Preloaded into developers so a rejection message is understood without asking.
+description: Rule IDs of the twbuild harness that gates and hooks cite — tree parity rules (T1–T10), hook blocks (H1–H7), design-import rules (D1–D5). Preloaded into developers so a rejection message is understood without asking.
 user-invocable: false
 ---
 
