@@ -464,6 +464,11 @@ def cycle_graph_end_to_end():
         wt = p["worktrees"]["ios"]
         check(os.path.isdir(wt) and os.path.isfile(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안")
         check("draft(home)" in _git(wt, "log", "--oneline"), _git(wt, "log", "--oneline"))
+        from twbuild import cycle
+        code, text = cycle.check_cli(wt)                      # 개발자용 게이트 — 워크트리에서 부르면 그 플랫폼, 초안 그대로면 통과
+        check(code == 0 and "[ios] 정적 pass" in text and "패리티" in text, (code, text))
+        code, text = cycle.check_cli(root, platform="android")
+        check(code == 0 and "[android] 정적 pass" in text and "[ios]" not in text, (code, text))
         check(design.index(root)["screens"]["mini/home"]["status"] == "building", "building")
         # 개발자가 결정을 기록하면 원장과 rules 에 남는다 (워크트리 안에서 불러도 메인 레포에)
         r, d, new = decide.record(wt, "n.home.column0.text1", "letter-spacing → tracking 0.5", "ios")

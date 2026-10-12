@@ -216,7 +216,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
               "2. Implement the ViewModel: Action → new UiState. Wire data through the container's repositories/stores (data task output, if any). Navigation goes through Route/Router.",
               "3. Replace icon placeholders with real icons (SF Symbols / Material icons closest to the SVG; note raw-svg paths in a comment).",
               "4. Keep every accessibility identifier / test tag exactly as in the tree. Keep UiState field names, Action names and Route names as generated (the gate compares both platforms).",
-              "5. Build (`twbuild check` is not available yet — use the platform build from your playbook) until it compiles with no errors. Commit in small steps; finish with a commit.",
+              "5. Run `twbuild check` (the static gate T1~T6 for your screen, parity when the other worktree exists; `--build` adds the platform build) and the platform build from your playbook until both are clean. Commit in small steps; finish with a commit.",
               "6. If a CSS → native translation is ambiguous for a node, record it: `twbuild decide <node id> \"<your interpretation>\" --by " + platform + "`. If a decision for that node already exists, follow it.",
               "7. If something outside your boundary must change (contract, shared component, design, a different structure), stop and report `blocked` with the exact reason."]
     else:
@@ -224,7 +224,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
         L += [f"- Data task: implement the data layer for entities {ents}: for each entity a `<Entity>Repository` protocol/interface + a local implementation (in-memory or local DB) and a mock/API implementation using the generated contract routes (`api/generated/routes.json`). Register them in `AppContainer`.",
               "- Follow AGENT.md §14 data layer: Repository (synced entity, local DB is the source of truth), Store (app-wide state), Draft (flow-scoped). Expose observation (AsyncStream / Flow) so several screens can subscribe.",
               "", "## What to do", "1. Create the data objects under Core/Data (iOS) · core/data (Android) with the SAME names and method names as the other platform (the gate compares them): `fetch`, `observe`, `upsert`, `delete`.",
-              "2. Wire them into AppContainer (constructor injection). 3. Build until it compiles. Commit. 4. Report blocked for anything outside your boundary."]
+              "2. Wire them into AppContainer (constructor injection). 3. Build until it compiles; `twbuild check` shows the T6 name parity once the other platform has pushed its worktree. Commit. 4. Report blocked for anything outside your boundary."]
     decs = [d for d in decide.ledger(root)["decisions"] if d["feature"] in (feature, "general") and d["status"] != "flipped"]
     if decs:
         L += ["", "## Team decisions (binding)"] + [f"- {d['id']} [{d['status']}] `{d['topic']}` — {d['text']} (by {d['by']})" for d in decs]
@@ -321,25 +321,79 @@ def _after_dispatch(s):
 
 # ─────────────────────────── smoke (결정적) ───────────────────────────
 
-def n_smoke(s):
-    root, feature = s["root"], s["feature"]
-    task = _task_now(s)
-    cfg = config.load(root)
+def static_results(root, feature, task, wts, cfg):
+    """정적 층(T1~T4) + 패리티(T5 · T6) — smoke 노드와 `twbuild check` 가 같은 함수를 쓴다. wts: 플랫폼 → 워크트리."""
     vars_ = config.app_vars(cfg)
     lays = _layouts(root, feature)
     tk = tokens.load(root) or {}
     hexes = [e["hex"][1:] for e in (tk.get("color") or {}).values() if e.get("kind") == "color"]
     res = {}
-    wts = {}
-    for p in cfg.get("platforms") or []:
-        wt = util.tw(root, util.WORKTREES, worktree_name(p, task["id"]))
-        wts[p] = wt
-        r = {}
-        if task["kind"] == "screen" and task["id"] in lays:
+    for p, wt in wts.items():
+        if task["kind"] == "screen" and task["id"] in lays and os.path.isdir(wt):
             src_hex = gate.source_hexes(util.read_text(os.path.join(root, lays[task["id"]].get("source") or ""), ""))
-            r["static"] = gate.static_check(wt, p, lays[task["id"]], hexes, src_hex)
+            res[p] = {"static": gate.static_check(wt, p, lays[task["id"]], hexes, src_hex)}
         else:
-            r["static"] = {"status": "unmeasured", "violations": [], "checked": 0}
+            res[p] = {"static": {"status": "unmeasured", "violations": [], "checked": 0}}
+    both = [w for w in (wts.get("ios"), wts.get("android")) if w and os.path.isdir(w)]
+    if len(both) == 2:
+        par = gate.parity_check(wts["ios"], wts["android"], vars_)
+        dp = gate.data_parity_check(wts["ios"], wts["android"], vars_)
+        if dp["status"] == "fail":
+            par = {"status": "fail", "violations": par["violations"] + dp["violations"]}
+        for p in res:
+            res[p]["parity"] = par
+    return res
+
+
+def check_cli(cwd, platform=None, build=False):
+    """`twbuild check [--platform ios|android] [--build]` — 개발자가 과제 중 직접 돌리는 게이트. 워크트리 안에서 부르면 그 플랫폼. → (code, 한국어 출력)."""
+    main = git.main_root(cwd)
+    if not main or not util.is_wired(main):
+        return 2, "twbuild 레포(또는 그 워크트리) 안에서 실행한다"
+    cur = util.read_json(util.tw(main, "tasks", "_current.json"), {}) or {}
+    task, feature = cur.get("task"), cur.get("feature")
+    if not task or not feature:
+        return 2, "진행 중인 과제가 없다 (.twbuild/tasks/_current.json)"
+    cfg = config.load(main)
+    wts = {p: w for p, w in (cur.get("worktrees") or {}).items() if os.path.isdir(w)}
+    here = os.path.abspath(cwd)
+    if not platform:
+        platform = next((p for p, w in wts.items() if here == os.path.abspath(w) or here.startswith(os.path.abspath(w) + os.sep)), None)
+    res = static_results(main, feature, task, wts, cfg)
+    lines, fail = [f"twbuild check — {feature}/{task['id']} ({task['kind']})" + (f" · {platform}" if platform else "")], False
+    for p, r in res.items():
+        if platform and p != platform:
+            continue
+        st = r["static"]
+        lines.append(f"[{p}] 정적 {st['status']} (검사 {st.get('checked', 0)}개)" + ("" if st["status"] != "unmeasured" else " — 화면 과제가 아니거나 워크트리가 없다"))
+        lines += [f"  - {v['rule']}: {v['detail']}" for v in st.get("violations") or []]
+        fail = fail or st["status"] == "fail"
+        if build and p in wts:
+            b = gate.build(wts[p], p, config.app_vars(cfg), util.tw(main, util.LOGS_DIR, f"check-{feature}-{task['id']}-{p}.log"))
+            lines.append(f"[{p}] 빌드 {b['status']} — {b.get('detail', '')} ({metrics._fmt_ms(b.get('ms'))})")
+            if b["status"] == "fail":
+                fail = True
+                lines.append(gate.tail(b["log"]))
+    par = next(iter(res.values()), {}).get("parity") if res else None
+    if par:
+        lines.append(f"[both] 패리티(T5 · T6) {par['status']}")
+        lines += [f"  - {v['rule']}: {v['detail']}" for v in par.get("violations") or []]
+        fail = fail or par["status"] == "fail"
+    else:
+        lines.append("[both] 패리티 못 잼 — 상대 플랫폼 워크트리가 없다")
+    lines.append("실패" if fail else "통과 — 스모크는 머지 전에 빌드 · 계약 · 기기 층을 다시 잰다")
+    return (1 if fail else 0), "\n".join(lines)
+
+
+def n_smoke(s):
+    root, feature = s["root"], s["feature"]
+    task = _task_now(s)
+    cfg = config.load(root)
+    vars_ = config.app_vars(cfg)
+    wts = {p: util.tw(root, util.WORKTREES, worktree_name(p, task["id"])) for p in cfg.get("platforms") or []}
+    res = static_results(root, feature, task, wts, cfg)                 # 정적 층 + 패리티 (twbuild check 와 같은 함수)
+    for p, wt in wts.items():
+        r = res[p]
         log = util.tw(root, util.LOGS_DIR, f"smoke-{feature}-{task['id']}-{p}.log")
         b = gate.build(wt, p, vars_, log)
         if b.get("status") == "fail":
@@ -347,14 +401,6 @@ def n_smoke(s):
         r["build"] = b
         r["contract_decode"] = (gen.decode_check(wt, p, util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log")) if b.get("status") == "pass"
                                 else {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"})           # 계약 층(6장)
-        res[p] = r
-    if len(wts) == 2:
-        par = gate.parity_check(wts.get("ios", root), wts.get("android", root), vars_)
-        dp = gate.data_parity_check(wts.get("ios", root), wts.get("android", root), vars_)
-        if dp["status"] == "fail":
-            par = {"status": "fail", "violations": par["violations"] + dp["violations"]}
-        for p in res:
-            res[p]["parity"] = par
     ok = all(r["static"]["status"] != "fail" and r["build"]["status"] != "fail" and (r.get("parity") or {}).get("status") != "fail"
              and r["contract_decode"]["status"] != "fail" for r in res.values())
     # 기기 층(6장): 설정 smoke.device — every 는 매번, merge 는 다른 층을 다 통과한 시도(= 머지 직전)에만, off 는 안 잰다. 못 잼은 머지를 막지 않고 보고서에 남는다. fail 은 막는다.

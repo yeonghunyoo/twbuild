@@ -118,7 +118,7 @@ def _design(a, root):
 def main():
     ap = argparse.ArgumentParser(description="twbuild MCP 서버 · CLI")
     ap.add_argument("cmd", nargs="?", default="serve",
-                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock"])
+                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock", "check"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--root", default=None)
     ap.add_argument("--scope", default=None, help="design start: 기능 이름")
@@ -133,6 +133,8 @@ def main():
     ap.add_argument("--by", default=None, help="decide: ios | android | lead")
     ap.add_argument("--staged", action="store_true", help="scan: 스테이지된 파일만 (pre-commit 훅)")
     ap.add_argument("--port", type=int, default=8787, help="mock: 포트")
+    ap.add_argument("--platform", default=None, help="check: ios | android (기본: 워크트리에서 추론)")
+    ap.add_argument("--build", action="store_true", help="check: 플랫폼 빌드까지")
     ap.add_argument("--compare", action="store_true", help="stats: 기능별 비교 표")
     ap.add_argument("--feature", default=None, help="stats: 기능 하나의 요약")
     a = ap.parse_args()
@@ -210,6 +212,11 @@ def main():
         print(msg)
         return code
     bootstrap_venv()
+    if a.cmd == "check":
+        from twbuild import cycle
+        code, msg = cycle.check_cli(os.getcwd() if a.root is None else root, a.platform, a.build)
+        print(msg)
+        return code
     from twbuild import router
     if a.cmd == "status":
         out = router.status(root)
