@@ -75,7 +75,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 - 다른 화면에 속한 블록은 트리에서 `{"kind": "screen", "ref": "<화면>"}` 슬롯이다(연속 같은 ref 는 하나). 다른 화면 안의 조건 구역(`showFavHero`)은 화면이 아니라 그 화면의 `if` 노드다.
 - 실측 (2026-10-11): 사운드스케이프 `forest.dc.html` → 화면 8개 · 노드 15~44개/화면 · 못 잼 0 · 토큰 48개(못 잼 4: color-mix 파생) · 생성 토큰으로 두 플랫폼 빌드 통과.
 
-이미지는 사람이 `assets/` 에 넣는다(커넥터는 텍스트만). 폰트는 `styles.css` 의 웹폰트를 하네스가 받는다(네트워크 확인).
+이미지는 사람이 `assets/` 에 넣는다(커넥터는 텍스트만). 폰트는 `styles.css` 의 웹폰트(`@import` Google Fonts · `@font-face`)를 design run 끝(finish)에 하네스가 받는다(`fonts.py` — 비브라우저 UA 로 정적 TTF, PostScript 이름은 name 테이블) → `design/ds/fonts/` + `index.json`(출처 · sha, 커밋) → 두 앱에 복사 · 등록(iOS `App/Resources/Fonts` + `project.yml` `info.properties.UIAppFonts` · Android `res/font/<family>_<weight>`) · `Fonts.swift`(`FontFamily`) · `Fonts.kt`(`FontFamilies`) 생성물. `twbuild fonts fetch|install|status`. 라이선스 OFL · Apache.
 디자인 프로젝트 · 화면은 intake 에서 lead 가 사용자에게 묻는다(ask).
 
 ## 3. 레이아웃 트리 · 구조 초안
@@ -133,9 +133,10 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
 
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
-- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
+- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
-  merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` 를 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다.
+  merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` · 측정 요약 · 잠금을 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다. plan 이 계약을 바꾸면 생성물까지 `contract(<기능>)` 커밋. `_data.yaml` 의 엔티티는 사이클마다 합집합.
+  실측(2026-10-13 헤드리스 lead, sound 화면): 리드가 intake · plan · 배차 · 결정(D-33 확정 · D-35→D-39 뒤집기)을 혼자 처리했고 19턴 · 8.6분 · $8.56(개발자 제외). 멈춤 원인은 하네스 버그(워크트리 디코딩 설정 · 생성물 누락 · 훅 거짓 양성 · 재작업 프롬프트 누락)였고 전부 고쳤다.
   아직 없는 것: review · fix 분류(지금은 실패 전부 → 재작업) · retro.
 - 사람에게 묻는 것은 전부 ask(AskUserQuestion — 선택지 + 직접 입력, 추천을 맨 위에). 채팅 자유 질문은 쓰지 않는다.
 - 그래프가 과제마다 "호출할 스킬" 을 싣는다.
@@ -153,7 +154,7 @@ interactions: [HOME-1: n.home.card 탭 → Screens.detail(id)]
 translations: [D-14]                       # 트리가 못 정한 번역 해석
 ```
 
-- 구현 중 해석은 개발자가 `twbuild decide <노드 ID> "<해석>" --by ios` 로 기록한다 → 메인 레포 `.claude/rules/team/` 에 D-xx(잠정). 상대 개발자에게는 훅이 주입한다(6 KB 상한 · 확정 먼저 · 본문 220자 — 실측: 15 KB 주입은 잘려 앞 2 KB 만 보였다; 전체는 `twbuild decide`). 같은 주제가 있으면 먼저 쓴 쪽이 이긴다. lead 가 확정하거나 뒤집는다.
+- 구현 중 해석은 개발자가 `twbuild decide <노드 ID> "<해석>" --by ios` 로 기록한다 → 메인 레포 `.claude/rules/team/` 에 D-xx(잠정; `--by lead` 는 바로 확정). 상대 개발자에게는 훅이 주입한다(6 KB 상한 · 확정 먼저 · 본문 220자 — 실측: 15 KB 주입은 잘려 앞 2 KB 만 보였다; 전체는 `twbuild decide`). 같은 주제가 있으면 먼저 쓴 쪽이 이긴다. lead 가 확정하거나 뒤집는다.
 - 개발자가 정할 수 없는 것(계약 · 공용 컴포넌트 · 디자인 시스템 · 트리와 다른 구조)은 `blocked`. 디자인 자체가 바뀌어야 하면 사람 할 일.
 - 개발자끼리 직접 메시지를 주고받지 않는다. 같은 화면의 두 과제는 함께 띄우고 함께 닫는다.
 
@@ -168,7 +169,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
 - 규칙은 `harness-rules` 에 ID 로 두고, 거부 메시지가 같은 ID 를 인용한다.
 - 정적 규칙(`server/twbuild/gate.py`): T1 뷰 노드 ID 가 코드에 있다(`accessibilityIdentifier`/`testTag`) · T2 `if`·`list` 상태 키가 있다 · T3 `on_*` 핸들러의 Action 이 있다(리스트 안은 `<items><Handler>(item)`) ·
-  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem` ↔ `core/designsystem`) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다). 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
+  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem` ↔ `core/designsystem`) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다) · T9 두 플랫폼에 등록된 폰트 집합(family · weight · style)이 같다(하네스가 등록, 개발자는 손대지 않는다). 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
 
 ## 7. 팀 · 스킬
 
@@ -309,9 +310,9 @@ agents:
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
 | `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 — 절차 · CSS→네이티브 번역표(두 플랫폼 같은 행 순서) · 빌드 환경 · 규칙 ID(T · H · D) |
 | `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만. `skills:` 로 코어 스킬 프리로드, `tools:` 에 claude-design · Agent 없음. 플러그인 에이전트 타입 `twbuild:ios-dev` |
-| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T6 · 빌드) · device(기기 층) · skills(공개 스킬 설치) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T6 · 빌드) · device(기기 층) · skills(공개 스킬 설치) · fonts(웹폰트) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
 | `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · `decisions.py`(SubagentStart 에 기능의 결정 전부 · PreToolUse 에 새 결정만, `agent_id` 기준 중복 제거) · `agent_metrics.py`(SubagentStart→Stop 시간 · 트랜스크립트 usage 합산). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
-| `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block` · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
+| `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block`(블록이 템플릿과 다르면 wire · prepare 가 갱신) · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
 | `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py`, 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |
 
 ## handoff-agent 에서 가져올 것 (`../handoff-agent`, 이식 후 레포와 이 절 삭제)

@@ -221,6 +221,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
         L += [f"- Layout tree (STRUCTURE, 1:1): `design/{feature}/layout/{sid}.json` — nesting, order, `if`, `list`, handlers and node ids are binding. No merging, dropping, reordering or extra containers.",
               f"- Plan: `.twbuild/plans/{feature}/{sid}.yaml` (states · interactions · data · translations).",
               f"- Design source (for look only): `design/{feature}/` · tokens `design/ds/tokens.json` → generated `Tokens.*` constants.",
+              f"- Fonts (generated, registered on both platforms — never add font files yourself, gate T9): iOS `FontFamily.heading` / `FontFamily.body` + `FontFamily.font(…)` in `App/Core/DesignSystem/Fonts.swift`; Android `FontFamilies.heading` / `FontFamilies.body` in `core/designsystem/Fonts.kt`. CSS `var(--font-heading)` → those; if the file is missing the fonts were not fetched — fall back to system fonts and say so in your note.",
               f"- Structure draft (already committed as `draft({sid})`): {', '.join(drafted) if drafted else 'see Features/<feature>/<Screen>'}. It compiles; it is yours now."]
         L += ["", "## What to do",
               "1. Translate every `// style:` comment into native styling using your translate skill. Values that match a token use the `Tokens.*` constant; other values come from the tree as written. Never invent colors/sizes that are not in the tree.",
