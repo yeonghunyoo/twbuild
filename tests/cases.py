@@ -78,8 +78,8 @@ def names():
 
 @case
 def masking():
-    s = leaks.mask_all("sdk /Users/yh/Library/Android/sdk token ghp_" + "a" * 36 + " mail a.b@gmail.com ok noreply@x.com")
-    check("/Users/yh" not in s and "ghp_" not in s and "a.b@gmail.com" not in s and "noreply@x.com" in s, s)
+    s = leaks.mask_all("sdk /Users/someone/Library/Android/sdk token ghp_" + "a" * 36 + " mail a.b@gmail.com ok noreply@x.com")
+    check("/Users/someone" not in s and "ghp_" not in s and "a.b@gmail.com" not in s and "noreply@x.com" in s, s)
 
 
 # ─────────────────────────── 셋업 그래프 ───────────────────────────

@@ -4,7 +4,7 @@
 > lead(메인 세션)와 개발자 둘(ios-dev · android-dev)이 LangGraph 순서대로 화면 단위로 동시에 만든다.
 > 사용자는 코드를 읽지 않고 증거를 보고 진행한다. 스모크를 통과하면 머지까지 자동이다.
 
-상태: 설계 초안 v0.0.1 · 코드 없음 · PoC 1~3 확인. 이 문서에 없는 것은 맨 끝 "나중에" 에 있다.
+상태: v0.0.1 · 한 사이클 골격 구현 · PoC 1~4 · 6 확인(5 대기). 구현 현황은 `CLAUDE.md`, 이 문서에 없는 것은 맨 끝 "나중에" 에 있다.
 
 ## 용어
 
@@ -135,6 +135,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
 - 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
+  merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` 를 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다.
   아직 없는 것: 디자인 시스템 부트스트랩 과제 · review · fix 분류(지금은 실패 전부 → 재작업) · retro · 기기 실행 · 계약 디코딩 층.
 - 사람에게 묻는 것은 전부 ask(AskUserQuestion — 선택지 + 직접 입력, 추천을 맨 위에). 채팅 자유 질문은 쓰지 않는다.
 - 그래프가 과제마다 "호출할 스킬" 을 싣는다.
@@ -298,7 +299,7 @@ agents:
 
 공개 스킬 출처: AvdLee/SwiftUI-Agent-Skill · dpearson2699/swift-ios-skills(PolyForm — 사용자 설치만) · android/skills · chrisbanes/skills(Compose · Kotlin 만) · tt-a1i/archify. 셋업이 대상 레포 `.claude/skills/` 에 커밋 고정으로 설치한다.
 
-## 구성 (계획)
+## 구성
 
 | 위치 | 역할 |
 |---|---|

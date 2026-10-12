@@ -427,6 +427,9 @@ def n_merge(s):
         git.remove_worktree(root, worktree_name(p, task["id"]))
     rep = evidence(root, feature, task, s, commits)
     util.write_text(os.path.join(root, REPORTS, feature, f"{task['id']}.md"), rep)
+    # 원장(design/index.json) · 결정(.claude/rules/team) · brief 는 커밋 대상이다 — 머지마다 main 에 남긴다 (AGENT.md 2장 · 5장)
+    git.commit_paths(root, f"ledger({feature}/{task['id']}): index · decisions · brief",
+                     os.path.join("design", "index.json"), os.path.join(".claude", "rules", "team"), os.path.join(util.FEATURES_DIR, feature))
     reports = list(s.get("reports") or []) + [rep]
     cursor = s.get("cursor", 0) + 1
     return {"phase": "build" if cursor < len(s.get("order") or []) else "done", "cursor": cursor, "reports": reports, "blocked": None,
