@@ -302,11 +302,12 @@ def _after_prepare(s):
 
 # ─────────────────────────── dispatch (묻는 노드) ───────────────────────────
 
-def _rework_text(s, task_id):
+def _rework_text(s, task_id, platform=None):
+    """재작업 프롬프트의 실패 상세 — platform 을 주면 그 플랫폼의 층 + 양쪽 공통(패리티)만 (상대 플랫폼 로그는 소음)."""
     res = (s.get("results") or {}).get(task_id) or {}
     out = []
     for p, r in res.items():
-        if not isinstance(r, dict):
+        if not isinstance(r, dict) or (platform and p != platform):
             continue
         for v in (r.get("static") or {}).get("violations") or []:
             out.append(f"- [{p}] {v['rule']}: {v['detail']}")
@@ -332,11 +333,10 @@ def n_dispatch(s):
     cfg = config.load(root)
     prepared = (s.get("dev") or {}).get("_prepared") or {}
     attempt = (s.get("attempts") or {}).get(task["id"], 0) + 1
-    rework = _rework_text(s, task["id"]) if attempt > 1 else ""
     prompts, models = {}, {}
     for p in cfg.get("platforms") or []:
         wt = prepared.get(p, {}).get("worktree") or util.tw(root, util.WORKTREES, worktree_name(p, task["id"]))
-        prompts[p] = task_prompt(root, s, p, task, wt, prepared.get(p, {}).get("drafted") or [], rework)
+        prompts[p] = task_prompt(root, s, p, task, wt, prepared.get(p, {}).get("drafted") or [], _rework_text(s, task["id"], p) if attempt > 1 else "")
         models[p] = (cfg.get("agents", {}).get(p) or {}).get("model", "sonnet")
     payload = _task(
         "build",

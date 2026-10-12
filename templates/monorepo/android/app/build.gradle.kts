@@ -48,4 +48,5 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    testImplementation("junit:junit:4.13.2")      // 생성된 계약 디코딩 테스트(ContractDecodeTest)가 쓴다
 }

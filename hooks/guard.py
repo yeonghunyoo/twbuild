@@ -118,7 +118,11 @@ QUOTED_TEXT = re.compile(r"\"[^\"\n]*\s[^\"\n]*\"|'[^'\n]*\s[^'\n]*'")     # 공
 PATHLIKE = re.compile(r"[/.~$]")
 
 
+HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n[\s\S]*?\n\s*\1\b")     # 히어독 본문(과제 메모 · 커밋 본문) = 자연어 — 경로 · 명령으로 보지 않는다
+
+
 def check_bash(cmd, root, cwd):
+    cmd = HEREDOC.sub("<<EOF\nEOF", cmd)
     cmd = QUOTED_TEXT.sub('""', cmd)
     if PUSH.search(cmd):
         deny(GUIDE["H1"])
