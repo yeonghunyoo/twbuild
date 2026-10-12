@@ -16,7 +16,8 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
 - M3 사이클 골격 완료 (2026-10-11) — `cycle.py`(intake → plan → prepare → dispatch → smoke → merge · blocked) · `draft.py`(트리 → SwiftUI · Compose 초안: View · UiState · Action · ViewModel · Route 등록 — 사운드스케이프 화면 8개 모두 두 플랫폼 컴파일 통과) · `gate.py`(T1~T5 정적 · 빌드) · `decide.py`(`twbuild decide`, 원장 → rules md) · 에이전트 2 · 스킬 5 · 훅(결정 주입 · 에이전트 측정) · MCP `design_*` · 테스트 13.
 - 첫 실제 사이클 완료 (2026-10-12) — `~/orca/soundscape` forest: 데이터 과제(Preset · Session) + onboarding + home 머지(두 플랫폼 빌드 · T1~T6 통과). PoC 4 결과는 AGENT.md PoC 표. 이 run 에서 고친 하네스 버그: decide `--by` 파싱 · 주제 대소문자 · T4 가 디자인 데이터 색을 거부 · 과제 메모 수거 · T6 추가 · 지표 중복.
   lead 가 확인할 것(retro 전): 잠정 결정 D-06~D-10 · D-13~D-16 · D-18~D-32(두 플랫폼이 서로의 결정을 따랐음), 셸 프레임을 화면이 직접 그리는 임시 처리(D-18 — shell 화면 때 제거), 폰트 파일(Caprasimo · Figtree) 사람이 넣기, Android 는 기기 실행 미확인.
-- 미구현: 디자인 시스템 부트스트랩 과제 · review · fix 분류 · retro · 기기 실행 스모크 · 계약 디코딩 층 · 공개 스킬 설치(설정만 있음) · Swift/Kotlin 계약 코드 생성 · mock 서버 · 측정 `--compare`. 플러그인 설치 세션에서의 훅 경로(캡처 · 결정 주입 · 에이전트 측정) 실측.
+- 완료 점검 (2026-10-13) — 설계(AGENT.md) 항목별 실측 체크리스트. 고친 것: merge 가 원장 · 결정 · brief 를 `ledger(<기능>/<과제>)` 커밋으로 남김(첫 run 은 안 남겨 테스트 레포에 수동 커밋 `fb56a1b`) · 게이트 범위 T1~T6 표기 통일 · AGENT.md 상태 줄. 훅 5개는 단독 실행으로 동작 확인(플러그인 설치 세션 실측은 여전히 전).
+- 미구현: 디자인 시스템 부트스트랩 과제 · review · fix 분류 · retro · 기기 실행 스모크 · 계약 디코딩 층 · 공개 스킬 설치(설정만 있음) · Swift/Kotlin 계약 코드 생성 · mock 서버 · 측정 `--compare` · 기능별 측정 요약 커밋(`.twbuild/metrics/cycles/`) · 스모크 층별(빌드) 시간 기록 · pre-commit 시크릿 검사 · 웹폰트 받기. 플러그인 설치 세션에서의 훅 경로(캡처 · 결정 주입 · 에이전트 측정) 실측.
 - 2026-10-11 단순화: 핵심(디자인 정본 → 레이아웃 트리 → 구조 초안 → iOS ∥ AOS → 게이트 3층)만 남기고 나머지는 AGENT.md "나중에".
   지시 관리는 "정본 > 과제 프롬프트 > 나머지" 세 줄로 확정.
 - 측정 확정 (2026-10-11) — 구간별 시간 · 시도 · 토큰 지표, 래퍼 · 훅에서 기록(노드 안 금지), `twbuild stats` 터미널 표만. AGENT.md 13장.
