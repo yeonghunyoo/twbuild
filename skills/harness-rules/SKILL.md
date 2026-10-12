@@ -17,6 +17,8 @@ What the developers know is exactly what the gate measures. A failure or rejecti
 | T4 | No literal color that is not in the tree or the tokens | hex literals in source ⊆ tree values ∪ token colors |
 | T5 | Route set iOS = Android | enum cases of `Route.swift` vs sealed members of `Route.kt` |
 | T6 | Data-layer type names iOS = Android | type names under `App/Core/Data` vs `core/data` (Repository · Store · Draft · models) — same names, same method names |
+| T7 | Design-system component names iOS = Android | types + capitalized functions (Composables) under `App/Core/DesignSystem` vs `core/designsystem` |
+| T8 | A class node uses its catalog component | for a tree node whose `class` is an implemented catalog component `<Name>`, the screen code calls `<Name>(` / `<Name> {` (the draft already wraps it) |
 
 Also binding: the structure (nesting · order · containers) is the tree's; UiState field names, Action names and data object names/methods are the
 same on both platforms (the generator names them; keep them).

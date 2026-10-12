@@ -18,7 +18,8 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
   lead 가 확인할 것(retro 전): 잠정 결정 D-06~D-10 · D-13~D-16 · D-18~D-32(두 플랫폼이 서로의 결정을 따랐음), 셸 프레임을 화면이 직접 그리는 임시 처리(D-18 — shell 화면 때 제거), 폰트 파일(Caprasimo · Figtree) 사람이 넣기, Android 는 기기 실행 미확인.
 - 완료 점검 (2026-10-13) — 설계(AGENT.md) 항목별 실측 체크리스트. 고친 것: merge 가 원장 · 결정 · brief 를 `ledger(<기능>/<과제>)` 커밋으로 남김(첫 run 은 안 남겨 테스트 레포에 수동 커밋 `fb56a1b`) · 게이트 범위 T1~T6 표기 통일 · AGENT.md 상태 줄. 훅 5개는 단독 실행으로 동작 확인(플러그인 설치 세션 실측은 여전히 전).
 - 남은 개발 (2026-10-13) — 플러그인 설치 세션 실측(`claude -p --plugin-dir`): MCP(`mcp__plugin_twbuild_twbuild__*`) · H1 차단 · `twbuild:ios-dev` · 결정 주입 · 에이전트 측정 모두 동작, 주입 15 KB 가 잘려 → 6 KB 상한. 구현: 기능별 측정 요약 커밋 + `stats --compare/--feature` · 빌드 · 기기 시간 · 첫 머지 뒤 설정 잠금 강제(`lock.json`) · pre-commit 시크릿 훅 + 머지 전 브랜치 검사 · doctor(훅 · 신뢰 · 기기 · 스킬). 포크 3개 병합: `device.py`(기기 층, iOS 실측 통과) · `gen.py` + `mock.py`(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사 · mock, 템플릿 계약 실측: 두 플랫폼 빌드 · 예시 16개 디코딩) · `skills.py`(공개 스킬 13개 설치 실측 · PolyForm 5개는 사람 할 일). 테스트 26.
-- 미구현: 디자인 시스템 부트스트랩 과제 · review · fix 분류 · retro · 웹폰트 받기 · 카탈로그 컴포넌트 · 리소스 등록 검사 · Android 기기 층 실기기 실측 · handoff 번역표 나머지(그 뒤 `../handoff-agent` 삭제).
+- 디자인 시스템 과제 · `twbuild check` (2026-10-13) — plan 이 `design/ds/components/*.html` 이 있고 `ds.built` 가 없으면 `ds` 과제를 데이터 과제 앞에 둔다(`Core/DesignSystem/Catalog/<Name>`, trailing content 규약) · 게이트 T7(컴포넌트 이름 패리티) · T8(class 노드는 구현된 컴포넌트 호출) · 초안이 class 노드를 `<Name> { }` 로 감싼다 · `twbuild check`(개발자용 정적 게이트 · 패리티 · `--build`). 테스트 26. 사운드스케이프엔 아직 카탈로그 html 이 없다(R-0001 은 부트스트랩 run 이 아니었다) — 다음 design run 을 `--bootstrap` 으로.
+- 미구현: review · fix 분류 · retro · 웹폰트 받기(포크 진행 중) · 리소스 등록 검사 · Android 기기 층 실기기 실측 · handoff 번역표 나머지(그 뒤 `../handoff-agent` 삭제).
 - 2026-10-11 단순화: 핵심(디자인 정본 → 레이아웃 트리 → 구조 초안 → iOS ∥ AOS → 게이트 3층)만 남기고 나머지는 AGENT.md "나중에".
   지시 관리는 "정본 > 과제 프롬프트 > 나머지" 세 줄로 확정.
 - 측정 확정 (2026-10-11) — 구간별 시간 · 시도 · 토큰 지표, 래퍼 · 훅에서 기록(노드 안 금지), `twbuild stats` 터미널 표만. AGENT.md 13장.

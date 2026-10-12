@@ -446,9 +446,23 @@ def cycle_graph_end_to_end():
         check(p["material"]["screens"]["home"]["actions"] == ["itemsOpen", "setName"] and "title" in p["material"]["screens"]["home"]["state_fields"], p["material"]["screens"]["home"])
         check(os.path.isfile(os.path.join(root, "features/mini/brief.md")), "brief")
         # plan — 데이터 과제 + 화면 셋
+        util.write_text(os.path.join(root, "design", "ds", "components", "card.html"), '<div class="card" style="padding: 16px; border-radius: 12px"><slot></slot></div>\n')
         out = router.submit(root, {"order": ["home", "stats", "sheet"], "data": ["Item"],
                                    "plans": {"home": {"states": ["isHome", "showHero"], "data": ["Item"], "interactions": ["HOME-1: items open → sheet"]}}})
         p = out["pending"]
+        # 디자인 시스템 카탈로그가 있으면 ds 과제가 먼저 — 개발자가 아무것도 안 해도(T7 못 잼) 머지되고 원장 ds.built 가 선다
+        check(p["task"] == "build" and p["job"]["id"] == "ds" and p["job"]["kind"] == "ds" and "Card" in p["prompts"]["ios"] and "Core/DesignSystem" in p["prompts"]["android"], out.get("message"))
+        out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
+        p = out["pending"]
+        check("ds/mini/ds" in _git(root, "tag") and design.index(root)["ds"]["built"]["components"] == ["Card"], design.index(root)["ds"])
+        # 카탈로그가 구현됐다고 치고(main 에 커밋) — 이후 화면 초안은 class 노드를 Card 로 감싼다 (T8)
+        pkg = config.app_vars(config.load(root))["id"].replace(".", "/")
+        util.write_text(os.path.join(root, "apps/ios/App/Core/DesignSystem/Catalog/Card.swift"),
+                        "import SwiftUI\nstruct Card<Content: View>: View {\n    let content: Content\n    init(@ViewBuilder content: () -> Content) { self.content = content() }\n    var body: some View { content }\n}\n")
+        util.write_text(os.path.join(root, f"apps/android/app/src/main/kotlin/{pkg}/core/designsystem/catalog/Card.kt"),
+                        "package x\nimport androidx.compose.runtime.Composable\nimport androidx.compose.ui.Modifier\n@Composable\nfun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) { content() }\n")
+        subprocess.run(["git", "-C", root, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-q", "--no-verify", "-m", "ds: Card"], check=True)
         check(p["task"] == "build" and p["job"]["id"] == "data", out.get("message"))
         check(p["task"] == "build" and p["attempt"] == 1 and set(p["prompts"]) == {"ios", "android"}, p.get("task"))
         check("Data task" in p["prompts"]["ios"] and "worktrees/ios-data" in p["prompts"]["ios"], p["prompts"]["ios"][:300])
@@ -464,6 +478,7 @@ def cycle_graph_end_to_end():
         wt = p["worktrees"]["ios"]
         check(os.path.isdir(wt) and os.path.isfile(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안")
         check("draft(home)" in _git(wt, "log", "--oneline"), _git(wt, "log", "--oneline"))
+        check("Card {" in util.read_text(os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")), "초안이 class 노드를 카탈로그 컴포넌트로 감싼다")
         from twbuild import cycle
         code, text = cycle.check_cli(wt)                      # 개발자용 게이트 — 워크트리에서 부르면 그 플랫폼, 초안 그대로면 통과
         check(code == 0 and "[ios] 정적 pass" in text and "패리티" in text, (code, text))

@@ -229,6 +229,29 @@ def _write_index(root, idx):
     util.write_json(os.path.join(root, INDEX), idx)
 
 
+def catalog(root):
+    """디자인 시스템 카탈로그 — design/ds/components/*.html → [{"name": Pascal, "file": rel}]. 첫 사이클의 디자인 시스템 과제가 이것을 네이티브 컴포넌트로 만든다."""
+    d = os.path.join(root, util.DESIGN_DIR, "ds", "components")
+    out = []
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if n.endswith(".html"):
+                out.append({"name": util.pascal(n[:-5]), "file": os.path.join(util.DESIGN_DIR, "ds", "components", n)})
+    return out
+
+
+def catalog_names(root):
+    return {c["name"] for c in catalog(root)}
+
+
+def set_ds_built(root, built):
+    """디자인 시스템 과제가 머지됐다 — 원장 ds.built (해시 · 커밋 · 컴포넌트)."""
+    idx = index(root)
+    idx["ds"] = {**(idx.get("ds") or {}), "built": built}
+    _write_index(root, idx)
+    return idx["ds"]
+
+
 def set_status(root, key, status, **fields):
     """원장 상태 전이 — 결정적 단계만 부른다 (plan → planned · 초안 생성 → building · merge → consumed)."""
     if status not in STATUSES:

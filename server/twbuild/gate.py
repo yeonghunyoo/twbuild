@@ -55,8 +55,8 @@ def _tree_values(lay):
     return hexes
 
 
-def static_check(base, platform, lay, token_hexes=(), extra_hexes=()):
-    """base: 워크트리(또는 레포) 루트. 화면 코드 전체를 대상으로 본다 (파일 자리는 개발자 소유)."""
+def static_check(base, platform, lay, token_hexes=(), extra_hexes=(), catalog=()):
+    """base: 워크트리(또는 레포) 루트. 화면 코드 전체를 대상으로 본다 (파일 자리는 개발자 소유). catalog: 이 플랫폼에 구현된 카탈로그 컴포넌트 이름(T8)."""
     src = _sources(os.path.join(base, util.APPS[platform]), platform)
     blob = "\n".join(src.values())
     violations, checked = [], 0
@@ -80,6 +80,11 @@ def static_check(base, platform, lay, token_hexes=(), extra_hexes=()):
             if key not in blob:
                 violations.append({"rule": "T2", "detail": f"items key of list missing: {n['items']} ({key})"})
             scope = {**scope, n.get("as") or "item": draft._item_type(n["items"])}
+        comp = draft.catalog_component(n, catalog)
+        if comp:
+            checked += 1
+            if f"{comp}(" not in blob and f"{comp} {{" not in blob:
+                violations.append({"rule": "T8", "detail": f"class node {n.get('id')} must use the catalog component {comp} (call {comp}(...) / {comp} {{ }})"})
         for key, v in n.items():
             if key.startswith("on_"):
                 checked += 1
@@ -128,22 +133,48 @@ _SWIFT_TYPES = re.compile(r"^\s*(?:public\s+|internal\s+)?(?:final\s+)?(?:protoc
 _KT_TYPES = re.compile(r"^\s*(?:public\s+|internal\s+)?(?:data\s+|sealed\s+|open\s+|abstract\s+)?(?:interface|class|object)\s+(\w+)", re.M)
 
 
-def data_types(base, platform, vars_):
-    """데이터 계층의 타입 이름 — iOS App/Core/Data · Android core/data. 두 플랫폼이 같아야 한다 (AGENT.md 14장)."""
+_SWIFT_FUNCS = re.compile(r"^\s*(?:public\s+|internal\s+)?(?:static\s+)?func\s+([A-Z]\w*)\s*[<(]", re.M)
+_KT_FUNCS = re.compile(r"^\s*(?:@Composable\s+)?(?:public\s+|internal\s+)?fun\s+([A-Z]\w*)\s*[<(]", re.M)
+DATA_DIRS = ("App/Core/Data", "core/data")
+DS_DIRS = ("App/Core/DesignSystem", "core/designsystem")
+
+
+def types_in(base, platform, vars_, dirs, funcs=False):
+    """한 계층 디렉터리의 타입 이름 집합 — iOS apps/ios/<dirs[0]> · Android <패키지>/<dirs[1]>. funcs 면 대문자 함수(Composable)도 센다."""
     if platform == "ios":
-        d = os.path.join(base, "apps/ios/App/Core/Data")
-        rx = _SWIFT_TYPES
+        d = os.path.join(base, "apps/ios", dirs[0])
+        rxs = [_SWIFT_TYPES] + ([_SWIFT_FUNCS] if funcs else [])
     else:
-        d = os.path.join(base, "apps/android/app/src/main/kotlin", vars_["id"].replace(".", "/"), "core/data")
-        rx = _KT_TYPES
+        d = os.path.join(base, "apps/android/app/src/main/kotlin", vars_["id"].replace(".", "/"), dirs[1])
+        rxs = [_KT_TYPES] + ([_KT_FUNCS] if funcs else [])
     names = set()
     if not os.path.isdir(d):
         return names
     for base_dir, _, files in os.walk(d):
         for n in files:
             if n.endswith((".swift", ".kt")):
-                names |= set(rx.findall(_strip_comments(util.read_text(os.path.join(base_dir, n), ""))))
+                t = _strip_comments(util.read_text(os.path.join(base_dir, n), ""))
+                for rx in rxs:
+                    names |= set(rx.findall(t))
     return names
+
+
+def data_types(base, platform, vars_):
+    """데이터 계층의 타입 이름 — iOS App/Core/Data · Android core/data. 두 플랫폼이 같아야 한다 (AGENT.md 14장)."""
+    return types_in(base, platform, vars_, DATA_DIRS)
+
+
+def ds_types(base, platform, vars_):
+    """디자인 시스템(카탈로그 컴포넌트) 이름 — 타입과 Composable 함수. 두 플랫폼이 같아야 한다 (T7)."""
+    return types_in(base, platform, vars_, DS_DIRS, funcs=True)
+
+
+def ds_parity_check(ios_base, android_base, vars_):
+    """T7 — 디자인 시스템 컴포넌트 이름 집합 iOS = Android. 둘 다 없으면 못 잼."""
+    a, b = ds_types(ios_base, "ios", vars_), ds_types(android_base, "android", vars_)
+    if a == b:
+        return {"status": "pass" if a else "unmeasured", "violations": []}
+    return {"status": "fail", "violations": [{"rule": "T7", "detail": f"design-system components differ — ios only: {sorted(a - b)}, android only: {sorted(b - a)}"}]}
 
 
 def data_parity_check(ios_base, android_base, vars_):

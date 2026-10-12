@@ -108,6 +108,9 @@ def plan_material(root, feature, screens):
     except contract.ContractError as e:
         mat["routes"] = [f"(contract error: {e})"]
     mat["brief"] = util.read_text(os.path.join(root, util.FEATURES_DIR, feature, "brief.md"), "")
+    idx = design.index(root)
+    mat["catalog"] = [c["name"] for c in design.catalog(root)]                     # 디자인 시스템 컴포넌트 (첫 사이클의 ds 과제가 만든다)
+    mat["ds_built"] = bool((idx.get("ds") or {}).get("built"))
     mat["decisions"] = [d for d in decide.ledger(root)["decisions"] if d["feature"] in (feature, "general") and d["status"] != "flipped"]
     return mat
 
@@ -151,7 +154,8 @@ def n_plan(s):
         except design.DesignError:
             pass
     data = [str(x) for x in (payload.get("data") or []) if str(x).strip()]
-    tasks = ([{"kind": "data", "id": "data"}] if data else []) + [{"kind": "screen", "id": sid} for sid in order]
+    ds_first = bool(design.catalog(root)) and not (design.index(root).get("ds") or {}).get("built")       # 디자인 시스템 과제 → 데이터 과제 → 화면 (4장 build)
+    tasks = ([{"kind": "ds", "id": "ds"}] if ds_first else []) + ([{"kind": "data", "id": "data"}] if data else []) + [{"kind": "screen", "id": sid} for sid in order]
     util.write_text(os.path.join(root, PLANS, feature, "_data.yaml"), yaml_lite.dumps({"entities": data}))
     return {"phase": "build", "screens": order, "order": tasks, "cursor": 0, "log": [f"plan:{len(order)} screens, data {data}"]}
 
@@ -177,7 +181,8 @@ def _draft_into(root, wt, lay, feature, platform, vars_):
     sid = lay["screen"]
     if git.run(wt, "log", "--oneline", "--grep", f"^draft({sid})", check=False).stdout.strip():
         return []
-    files = draft.swift(lay, feature, vars_) if platform == "ios" else draft.kotlin(lay, feature, vars_)
+    catalog = gate.ds_types(wt, platform, vars_) & design.catalog_names(git.main_root(wt) or wt)     # 이 플랫폼에 이미 구현된 카탈로그 컴포넌트만 감싼다
+    files = draft.swift(lay, feature, vars_, catalog) if platform == "ios" else draft.kotlin(lay, feature, vars_, catalog)
     written = []
     for rel, text in files.items():
         p = os.path.join(wt, util.APPS[platform], rel)
@@ -219,6 +224,13 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
               "5. Run `twbuild check` (the static gate T1~T6 for your screen, parity when the other worktree exists; `--build` adds the platform build) and the platform build from your playbook until both are clean. Commit in small steps; finish with a commit.",
               "6. If a CSS → native translation is ambiguous for a node, record it: `twbuild decide <node id> \"<your interpretation>\" --by " + platform + "`. If a decision for that node already exists, follow it.",
               "7. If something outside your boundary must change (contract, shared component, design, a different structure), stop and report `blocked` with the exact reason."]
+    elif task["kind"] == "ds":
+        cat = design.catalog(root)
+        L += ["- Design-system task: implement the catalog components as reusable views under `App/Core/DesignSystem/Catalog/<Name>.swift` (iOS) · `core/designsystem/catalog/<Name>.kt` (Android) — one file per component, the SAME names and parameter names on both platforms (gate T7 compares them):"]
+        L += [f"  - `{c['name']}` ← `{c['file']}` (markup + inline styles + class modifiers = variants)" for c in cat]
+        L += ["- Convention the structure drafts rely on: every component takes trailing content — SwiftUI `struct <Name><Content: View>: View { init(@ViewBuilder content: () -> Content) }`, Compose `@Composable fun <Name>(modifier: Modifier = Modifier, content: @Composable () -> Unit)`; every other parameter has a default. Colors · spacing · radius through `Tokens.*`; no literal values that are not in the component html.",
+              "", "## What to do", "1. Read each component html. 2. Implement it with the convention above (plus a preview). 3. Build; `twbuild check` shows the T7 name parity once the other platform's worktree exists. Commit.",
+              "4. No screen code, no data code. Report blocked for anything outside Core/DesignSystem."]
     else:
         ents = (yaml_lite.loads(util.read_text(os.path.join(root, PLANS, feature, "_data.yaml"), "")) or {}).get("entities") or []
         L += [f"- Data task: implement the data layer for entities {ents}: for each entity a `<Entity>Repository` protocol/interface + a local implementation (in-memory or local DB) and a mock/API implementation using the generated contract routes (`api/generated/routes.json`). Register them in `AppContainer`.",
@@ -331,15 +343,16 @@ def static_results(root, feature, task, wts, cfg):
     for p, wt in wts.items():
         if task["kind"] == "screen" and task["id"] in lays and os.path.isdir(wt):
             src_hex = gate.source_hexes(util.read_text(os.path.join(root, lays[task["id"]].get("source") or ""), ""))
-            res[p] = {"static": gate.static_check(wt, p, lays[task["id"]], hexes, src_hex)}
+            catalog = gate.ds_types(wt, p, vars_) & design.catalog_names(root)       # T8 은 이 플랫폼에 구현된 컴포넌트만 요구한다
+            res[p] = {"static": gate.static_check(wt, p, lays[task["id"]], hexes, src_hex, catalog)}
         else:
             res[p] = {"static": {"status": "unmeasured", "violations": [], "checked": 0}}
     both = [w for w in (wts.get("ios"), wts.get("android")) if w and os.path.isdir(w)]
     if len(both) == 2:
         par = gate.parity_check(wts["ios"], wts["android"], vars_)
-        dp = gate.data_parity_check(wts["ios"], wts["android"], vars_)
-        if dp["status"] == "fail":
-            par = {"status": "fail", "violations": par["violations"] + dp["violations"]}
+        for extra in (gate.data_parity_check(wts["ios"], wts["android"], vars_), gate.ds_parity_check(wts["ios"], wts["android"], vars_)):   # T6 · T7
+            if extra["status"] == "fail":
+                par = {"status": "fail", "violations": par["violations"] + extra["violations"]}
         for p in res:
             res[p]["parity"] = par
     return res
@@ -488,6 +501,8 @@ def n_merge(s):
             design.set_status(root, key, "consumed", built={"tree": (idx["screens"].get(key) or {}).get("tree"), "commits": commits})
         except design.DesignError:
             pass
+    elif task["kind"] == "ds":
+        design.set_ds_built(root, {"hash": (idx.get("ds") or {}).get("hash"), "commits": commits, "components": sorted(design.catalog_names(root))})
     for p in cfg.get("platforms") or []:
         wt = util.tw(root, util.WORKTREES, worktree_name(p, task["id"]))
         notes = os.path.join(wt, TASKS)

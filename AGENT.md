@@ -98,7 +98,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | 생성기 (결정적) | 개발자 |
 |---|---|
 | 노드 → 컨테이너(`VStack` · `HStack` · `ZStack` · `LazyVGrid` ↔ `Column` · `Row` · `Box` · `LazyVerticalGrid`) · 중첩 · 순서 | `// style:` 주석(CSS 원문)을 플랫폼 방식으로 번역 |
-| `if` · `list` · 노드 ID · 문구 · 바인딩 자리 · `send(Action)` 호출부 · 카탈로그 컴포넌트 호출 | ViewModel 로직(Action 처리 → UiState) · Repository · API · 화면 전환 |
+| `if` · `list` · 노드 ID · 문구 · 바인딩 자리 · `send(Action)` 호출부 · 카탈로그 컴포넌트 호출(class 가 그 플랫폼에 구현된 컴포넌트면 `<Name> { 노드 }` 로 감싼다 — 컴포넌트는 trailing content 를 받는다) | ViewModel 로직(Action 처리 → UiState) · Repository · API · 화면 전환 |
 | 화면의 `UiState`(`bind` · `if` 상태 키) · `Action`(`on_*`) 타입 — 14장 | |
 
 - 초안은 개발자 소유 코드다. 컴파일되게 내고, 확실하지 않은 매핑은 주석으로 남긴다.
@@ -128,7 +128,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 |---|---|---|
 | intake | lead + 결정적 | brief 정리 · (필요하면) design run → 트리 · 화면 매핑 · 구조 초안 시험 실행 |
 | plan | lead | 화면 플랜(쓰는 데이터 `data:` 포함) · 카탈로그 컴포넌트 매핑 · 필요한 계약 변경 + 재생성 |
-| build | 결정적 + 개발자 둘 | 디자인 시스템 과제 → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev |
+| build | 결정적 + 개발자 둘 | 디자인 시스템 과제(`design/ds/components/*.html` 이 있고 원장 `ds.built` 가 없을 때 — 카탈로그 컴포넌트를 `Core/DesignSystem/Catalog/<Name>` 으로, 두 플랫폼 같은 이름 · 매개변수, trailing content 규약) → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev |
 | smoke | 결정적 | 게이트 3층 (6장). 실패 → build 재작업, 화면당 예산(기본 5회)을 넘으면 `blocked` |
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
 
@@ -136,7 +136,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 - 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
   merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` 를 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다.
-  아직 없는 것: 디자인 시스템 부트스트랩 과제 · review · fix 분류(지금은 실패 전부 → 재작업) · retro.
+  아직 없는 것: review · fix 분류(지금은 실패 전부 → 재작업) · retro.
 - 사람에게 묻는 것은 전부 ask(AskUserQuestion — 선택지 + 직접 입력, 추천을 맨 위에). 채팅 자유 질문은 쓰지 않는다.
 - 그래프가 과제마다 "호출할 스킬" 을 싣는다.
 - 노드는 부작용 뒤에 interrupt 하지 않는다(재개 시 노드가 처음부터 돈다). 저장 상태보다 실측이 이긴다.
@@ -168,7 +168,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
 - 규칙은 `harness-rules` 에 ID 로 두고, 거부 메시지가 같은 ID 를 인용한다.
 - 정적 규칙(`server/twbuild/gate.py`): T1 뷰 노드 ID 가 코드에 있다(`accessibilityIdentifier`/`testTag`) · T2 `if`·`list` 상태 키가 있다 · T3 `on_*` 핸들러의 Action 이 있다(리스트 안은 `<items><Handler>(item)`) ·
-  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`). 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
+  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem` ↔ `core/designsystem`) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다). 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
 
 ## 7. 팀 · 스킬
 

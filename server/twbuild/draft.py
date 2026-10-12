@@ -145,6 +145,15 @@ def _style_comment(n, pad, cmt="//"):
     return out
 
 
+def catalog_component(n, catalog):
+    """노드의 class 가운데 카탈로그 컴포넌트(Pascal 이름)에 있는 것 — 없으면 None. 생성기와 게이트(T8)가 같은 판정을 쓴다."""
+    for c in n.get("class") or []:
+        name = pascal(c)
+        if name in (catalog or ()):
+            return name
+    return None
+
+
 def _grid_cols(n):
     cols = str((n.get("style") or {}).get("grid-template-columns", ""))
     c = len(cols.split()) if cols else 2
@@ -198,10 +207,16 @@ def _swift_type(t):
     return t
 
 
-def _swift_node(n, an, scope, depth, out):
+def _swift_node(n, an, scope, depth, out, wrapped=False):
     pad = "    " * depth
     k = n.get("kind")
     nid = n.get("id", "")
+    comp = None if (wrapped or k in ("if", "list", "screen")) else catalog_component(n, getattr(an, "catalog", ()))
+    if comp:                                             # 카탈로그 컴포넌트로 감싼다 (T8) — 노드 자체(구조 · ID)는 그 안에 그대로
+        out.append(f"{pad}{comp} {{  // catalog component ← class {' '.join(n.get('class') or [])}")
+        _swift_node(n, an, scope, depth + 1, out, wrapped=True)
+        out.append(f"{pad}}}")
+        return
     out += _style_comment(n, pad)
     if k == "screen":
         out.append(f"{pad}// slot: {n.get('ref')} — host {pascal(n.get('ref'))}View here (built as its own screen)")
@@ -303,9 +318,10 @@ def _action_args(an, name, scope, expr, extra=None):
     return "(" + ", ".join(vals) + ")" if vals else ""
 
 
-def swift(lay, feature, vars_):
-    """{상대경로(apps/ios 기준): 텍스트}"""
+def swift(lay, feature, vars_, catalog=()):
+    """{상대경로(apps/ios 기준): 텍스트}. catalog: 이미 구현된 카탈로그 컴포넌트 이름 — class 노드를 그것으로 감싼다."""
     an = analyze(lay)
+    an.catalog = set(catalog or ())
     screen = lay["screen"]
     S = pascal(screen)
     F = pascal(feature)
@@ -392,10 +408,16 @@ def _swift_default(typ):
 
 # ─────────────────────────── Kotlin ───────────────────────────
 
-def _kt_node(n, an, scope, depth, out, in_lazy=False):
+def _kt_node(n, an, scope, depth, out, in_lazy=False, wrapped=False):
     pad = "    " * depth
     k = n.get("kind")
     nid = n.get("id", "")
+    comp = None if (wrapped or k in ("if", "list", "screen")) else catalog_component(n, getattr(an, "catalog", ()))
+    if comp:                                             # 카탈로그 컴포넌트로 감싼다 (T8)
+        out.append(f"{pad}{comp} {{  // catalog component ← class {' '.join(n.get('class') or [])}")
+        _kt_node(n, an, scope, depth + 1, out, in_lazy, wrapped=True)
+        out.append(f"{pad}}}")
+        return
     out += _style_comment(n, pad)
     if k == "screen":
         out.append(f"{pad}// slot: {n.get('ref')} — host {pascal(n.get('ref'))}Screen here (built as its own screen)")
@@ -485,9 +507,10 @@ def _screen_of(an):
     return an.screen
 
 
-def kotlin(lay, feature, vars_):
+def kotlin(lay, feature, vars_, catalog=()):
     """{상대경로(apps/android 기준): 텍스트}"""
     an = analyze(lay)
+    an.catalog = set(catalog or ())
     an.screen = lay["screen"]
     screen = lay["screen"]
     S = pascal(screen)
