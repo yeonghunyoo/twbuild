@@ -476,6 +476,8 @@ def cycle_graph_end_to_end():
         check(p["task"] == "build" and p["job"]["id"] == "stats" and "stats" in p["prompts"]["ios"], out.get("message"))
         log = _git(root, "log", "--oneline")
         check("screen(mini/home): ios" in log and "screen(mini/home): android" in log and "screen/mini/home" in _git(root, "tag"), log)
+        # 원장 · 결정 · brief 는 머지가 커밋한다 (그 뒤 prepare(stats) 가 index 를 다시 바꾸므로 작업 트리가 아니라 이력으로 본다)
+        check("ledger(mini/home)" in _git(root, "log", "--oneline", "--", "design/index.json", ".claude/rules/team", "features/mini"), log)
         check(design.index(root)["screens"]["mini/home"]["status"] == "consumed", design.index(root)["screens"]["mini/home"])
         check(not os.path.isdir(wt), "워크트리 제거")
         check(os.path.isfile(os.path.join(root, ".twbuild/reports/mini/home.md")) and "D-01" in util.read_text(os.path.join(root, ".twbuild/reports/mini/home.md")), "보고서에 결정")
