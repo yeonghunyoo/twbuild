@@ -119,7 +119,7 @@ def checks(root, cfg=None, t=None):
         out.append(_check("adb", "adb", bool(t["adb"]), t["adb"] or "없음", "SDK platform-tools 설치", "Android 실행 스모크", 1))
     out.append(_check("claude_design", "Claude Design 커넥터", None, "서버에서 못 잼 — lead 가 도구 목록(mcp__claude-design__*)으로 확인",
                       "Claude Code 에서 Claude Design 커넥터를 연결한다", "디자인 import", 2))
-    probs = config.problems(cfg)
+    probs = config.problems(cfg) + config.locked_problems(root, cfg)          # 첫 머지 뒤 잠긴 값(architecture · min_os · app.id · app.product)
     out.append(_check("config", "config.yaml 유효", not probs, "; ".join(probs), ".twbuild/config.yaml 을 고친다", "전체", 3))
     out.append(_check("app", "앱 이름 · 식별자", bool((cfg.get("app") or {}).get("name") and (cfg.get("app") or {}).get("id")),
                       (cfg.get("app") or {}).get("id") or "interview 에서 정한다", "", "전체", 3))
@@ -141,7 +141,27 @@ def checks(root, cfg=None, t=None):
     env_local = os.path.join(root, ".env.local")
     out.append(_check("env_local", ".env.local", os.path.isfile(env_local) or None, "" if os.path.isfile(env_local) else "없음 — twbuild init 이 틀을 만든다",
                       "twbuild init 뒤 에디터로 값을 채운다 (값은 채팅을 지나지 않는다)", "실서버 · 로그인 · 푸시", 1))
+    hook = git.hook_installed(root, "pre-commit", git.PRECOMMIT_MARK) if git.is_repo(root) else None
+    out.append(_check("precommit", "pre-commit 시크릿 검사 훅", hook, "" if hook else "없음 — 다음 /twbuild(prepare) 가 설치한다. 다른 pre-commit 훅이 있으면 그대로 두고 설치하지 않는다",
+                      "", "커밋 전 시크릿 검사", 1))
+    trust = _trusted(root)
+    out.append(_check("trust", "워크스페이스 신뢰(allow 목록 적용)", trust,
+                      "" if trust else ("~/.claude.json 에 기록 없음 — 헤드리스(claude -p) 세션은 이 레포의 allow 목록을 무시한다" if trust is False else "~/.claude.json 못 읽음"),
+                      "이 레포에서 claude 를 한 번 대화형으로 열어 신뢰를 확인한다", "", 1))
     return out
+
+
+def _trusted(root):
+    """Claude Code 가 이 레포를 신뢰했는가 — ~/.claude.json projects[<root>].hasTrustDialogAccepted. 못 읽으면 None."""
+    try:
+        with open(os.path.expanduser("~/.claude.json"), encoding="utf-8") as f:
+            projects = (json.load(f) or {}).get("projects") or {}
+    except (OSError, ValueError):
+        return None
+    for key in (root, os.path.realpath(root)):
+        if key in projects:
+            return bool(projects[key].get("hasTrustDialogAccepted"))
+    return False
 
 
 READY_IDS = ("python", "git", "config", "app", "contract", "rules", "selfcheck")

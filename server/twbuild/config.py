@@ -151,3 +151,34 @@ def app_vars(cfg):
         "min_android": str((cfg.get("min_os") or {}).get("android", 26)),
         "architecture": cfg.get("architecture") or "mvvm-udf",
     }
+
+
+# ─────────────────────────── 첫 머지 뒤 잠금 ───────────────────────────
+
+LOCK = "lock.json"      # .twbuild/lock.json — 커밋 대상(.gitignore 블록이 예외로 둔다)
+
+
+def _locked_values(cfg):
+    app = cfg.get("app") or {}
+    return {"architecture": cfg.get("architecture"), "min_os": cfg.get("min_os"), "app.id": app.get("id"), "app.product": app.get("product")}
+
+
+def lock(root, cfg=None):
+    """첫 머지 때 한 번 — 잠기는 값을 적어 둔다. 이미 있으면 그대로 돌려준다."""
+    path = util.tw(root, LOCK)
+    cur = util.read_json(path, None)
+    if cur:
+        return cur.get("values") or {}
+    vals = _locked_values(cfg or load(root))
+    util.write_json(path, {"t": util.now(), "values": vals})
+    return vals
+
+
+def locked_problems(root, cfg):
+    """잠긴 값이 바뀌었으면 한국어 한 줄씩 — doctor 의 config 검사에 합쳐진다."""
+    cur = util.read_json(util.tw(root, LOCK), None)
+    if not cur:
+        return []
+    now = _locked_values(cfg)
+    return [f"{k} 는 첫 머지 뒤 잠겼다({v!r} → {now.get(k)!r}) — 되돌린다. 바꾸려면 새 레포에서 시작한다"
+            for k, v in (cur.get("values") or {}).items() if now.get(k) != v]

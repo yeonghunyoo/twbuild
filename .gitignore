@@ -20,3 +20,6 @@ CLAUDE.local.md
 *.keystore
 google-services.json
 GoogleService-Info.plist
+
+# 포크 에이전트 워크트리 (로컬)
+.claude/worktrees/

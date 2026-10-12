@@ -1,5 +1,9 @@
-# twbuild (도구 상태 · 로컬 · 민감 파일은 커밋하지 않는다 — 예시는 .example 로)
-.twbuild/
+# twbuild (도구 상태 · 로컬 · 민감 파일은 커밋하지 않는다 — 예시는 .example 로. 기능별 측정 요약 · 설정 잠금은 커밋)
+.twbuild/*
+!.twbuild/metrics/
+.twbuild/metrics/*
+!.twbuild/metrics/cycles/
+!.twbuild/lock.json
 .env
 .env.*
 !.env.example

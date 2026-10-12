@@ -12,6 +12,7 @@
 import os
 import re
 import subprocess
+import time
 
 from . import draft, util
 
@@ -161,7 +162,14 @@ def parity_check(ios_base, android_base, vars_):
 
 
 def build(base, platform, vars_, log_path, timeout=1800):
-    """워크트리의 앱을 빌드한다. 툴체인이 없으면 unmeasured."""
+    """워크트리의 앱을 빌드한다 — 걸린 시간 ms 를 함께 돌려준다(13장 층별 시간). 툴체인이 없으면 unmeasured."""
+    t0 = time.time()
+    r = _build(base, platform, vars_, log_path, timeout)
+    r["ms"] = round((time.time() - t0) * 1000, 1)
+    return r
+
+
+def _build(base, platform, vars_, log_path, timeout):
     from . import probe
     t = probe.toolchain()
     app = os.path.join(base, util.APPS[platform])

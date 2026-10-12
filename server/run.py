@@ -118,7 +118,7 @@ def _design(a, root):
 def main():
     ap = argparse.ArgumentParser(description="twbuild MCP 서버 · CLI")
     ap.add_argument("cmd", nargs="?", default="serve",
-                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens"])
+                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--root", default=None)
     ap.add_argument("--scope", default=None, help="design start: 기능 이름")
@@ -131,6 +131,9 @@ def main():
     ap.add_argument("--file", default=None, help="design capture/listing/trial: 본문 파일")
     ap.add_argument("--spec", default=None, help="design finish/trial: 화면 spec JSON 파일")
     ap.add_argument("--by", default=None, help="decide: ios | android | lead")
+    ap.add_argument("--staged", action="store_true", help="scan: 스테이지된 파일만 (pre-commit 훅)")
+    ap.add_argument("--compare", action="store_true", help="stats: 기능별 비교 표")
+    ap.add_argument("--feature", default=None, help="stats: 기능 하나의 요약")
     a = ap.parse_args()
     root = os.path.abspath(a.root or os.environ.get("TWBUILD_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -157,7 +160,23 @@ def main():
         print(f".env.local 에 키 {len(added)}개를 더했다: {', '.join(added) or '(없음)'}\n에디터로 값을 채운 뒤 `twbuild doctor` 로 확인한다. 값은 채팅으로 보내지 않는다.")
         return 0
     if a.cmd == "stats":
-        print(metrics.stats_table(root))
+        print(metrics.compare_table(root) if a.compare else metrics.feature_table(root, a.feature) if a.feature else metrics.stats_table(root))
+        return 0
+    if a.cmd == "scan":
+        from twbuild import git as g, leaks
+        if a.staged:
+            rels = g.staged_files(root)
+            hits = leaks.scan_files(root, rels, reader=lambda rel: g.staged_text(root, rel))
+        else:
+            rels = list(a.args)
+            hits = leaks.scan_files(root, rels)
+        if hits:
+            print("커밋 거부 — 시크릿 · 민감 파일 의심 (AGENT.md 11장):")
+            for rel, kind, peek in hits:
+                print(f"  {rel}: {kind} {peek}")
+            print("값은 .env.local(gitignore)에, 예시는 .example 로. 거짓 양성이면 `git commit --no-verify` 로 넘기고 lead 에게 알린다.")
+            return 1
+        print(f"깨끗함 — {len(rels)}개 파일")
         return 0
     if a.cmd == "decide":
         from twbuild import decide

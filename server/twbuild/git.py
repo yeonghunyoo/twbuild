@@ -140,3 +140,55 @@ def merge_squash(root, b, message):
         return None
     run(root, "commit", "-q", "-m", message)
     return head(root)
+
+
+# ─────────────────────────── 검사 · 훅 ───────────────────────────
+
+PRECOMMIT_MARK = "twbuild pre-commit"
+
+
+def staged_files(cwd):
+    r = run(cwd, "diff", "--cached", "--name-only", "--diff-filter=AM", check=False)
+    return [l for l in r.stdout.splitlines() if l.strip()]
+
+
+def staged_text(cwd, rel):
+    r = run(cwd, "show", f":{rel}", check=False)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def changed_files(root, base, ref):
+    """base 와의 공통 조상 이후 ref 가 추가 · 수정한 파일."""
+    r = run(root, "diff", "--name-only", "--diff-filter=AM", f"{base}...{ref}", check=False)
+    return [l for l in r.stdout.splitlines() if l.strip()]
+
+
+def show(root, spec):
+    r = run(root, "show", spec, check=False)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def hooks_dir(root):
+    d = common_dir(root)
+    return os.path.join(d, "hooks") if d else None
+
+
+def install_hook(root, name, content, marker):
+    """git 훅 설치 — 우리 것(marker)이면 갱신, 다른 훅이 있으면 건드리지 않고 None. 새로 썼으면 True, 같으면 False."""
+    d = hooks_dir(root)
+    if not d:
+        return None
+    path = os.path.join(d, name)
+    cur = util.read_text(path, "")
+    if cur and marker not in cur:
+        return None
+    if cur == content:
+        return False
+    util.write_text(path, content)
+    os.chmod(path, 0o755)
+    return True
+
+
+def hook_installed(root, name, marker):
+    d = hooks_dir(root)
+    return bool(d) and marker in util.read_text(os.path.join(d, name), "")

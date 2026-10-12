@@ -33,10 +33,13 @@ def wire(root, pr):
         done.append("config.yaml")
     ig = os.path.join(root, ".gitignore")
     cur = util.read_text(ig)
+    block = util.read_text(os.path.join(util.TEMPLATES, "gitignore.block"))
     if GITIGNORE_MARK not in cur:
-        block = util.read_text(os.path.join(util.TEMPLATES, "gitignore.block"))
         util.write_text(ig, (cur.rstrip("\n") + "\n\n" if cur.strip() else "") + block)
         done.append(".gitignore")
+    elif ".twbuild/*" not in cur:                        # 옛 블록(.twbuild/ 전체 무시) → 측정 요약 · 잠금을 커밋하는 새 블록
+        util.write_text(ig, _replace_block(cur, block))
+        done.append(".gitignore(갱신)")
     md = os.path.join(root, "CLAUDE.md")
     cur = util.read_text(md)
     if CLAUDE_MARK not in cur:
@@ -51,7 +54,27 @@ def wire(root, pr):
             done.append(f"rules/{scope}")
     if _merge_settings(root):
         done.append(".claude/settings.json")
+    if install_precommit(root):
+        done.append("pre-commit")
     return done
+
+
+def _replace_block(cur, block):
+    """`.gitignore` 의 twbuild 블록(마커 줄부터 다음 빈 줄까지)을 새 블록으로."""
+    lines = cur.split("\n")
+    start = next(i for i, l in enumerate(lines) if l.startswith(GITIGNORE_MARK))
+    end = start
+    while end < len(lines) and lines[end].strip():
+        end += 1
+    return "\n".join(lines[:start]) + ("\n" if start else "") + block.rstrip("\n") + "\n" + "\n".join(lines[end:])
+
+
+def install_precommit(root):
+    """pre-commit 시크릿 검사 훅(11장) — .git/hooks/pre-commit, 워크트리 공용. 다른 훅이 있으면 두고 None. 멱등."""
+    if not git.is_repo(root):
+        return None
+    content = util.read_text(os.path.join(util.TEMPLATES, "pre-commit.sh")).replace("__RUN__", os.path.join(util.PLUGIN_ROOT, "server", "run.py"))
+    return git.install_hook(root, "pre-commit", content, git.PRECOMMIT_MARK)
 
 
 def _merge_settings(root):

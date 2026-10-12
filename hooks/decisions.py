@@ -30,6 +30,28 @@ def out(event, text):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}, ensure_ascii=False))
 
 
+CAP = 6000          # 실측(2026-10-13): 15 KB 주입은 파일로 빠져 앞 2 KB 만 보였다 — 짧게, 전체는 `twbuild decide` 로
+TEXT_CAP = 220
+
+
+def lines_of(head, decs):
+    """결정 목록 → 짧은 줄들. 확정 먼저, 그다음 잠정(새 것부터). 상한을 넘으면 개수만 적고 명령을 안내한다."""
+    ordered = [d for d in decs if d["status"] == "confirmed"] + sorted([d for d in decs if d["status"] != "confirmed"], key=lambda d: d["t"], reverse=True)
+    lines, used, rest = [head], len(head), 0
+    for d in ordered:
+        text = d["text"] if len(d["text"]) <= TEXT_CAP else d["text"][:TEXT_CAP - 1] + "…"
+        line = f"- {d['id']} [{d['status']}] `{d['topic']}` — {text} (by {d['by']})"
+        if used + len(line) + 1 > CAP:
+            rest += 1
+            continue
+        lines.append(line)
+        used += len(line) + 1
+    if rest:
+        lines.append(f"- … {rest} more not shown.")
+    lines.append("Full texts of every decision: run `twbuild decide` (no arguments).")
+    return lines
+
+
 def main():
     data = json.load(sys.stdin)
     event = data.get("hook_event_name", "")
@@ -54,9 +76,7 @@ def main():
         util.write_json(mark_path, {"t": util.now(), "feature": feature})
         if not decs:
             return
-        lines = [f"Team decisions for feature `{feature}` (binding; recorded with `twbuild decide`):"]
-        lines += [f"- {d['id']} [{d['status']}] `{d['topic']}` — {d['text']} (by {d['by']})" for d in decs]
-        out("SubagentStart", "\n".join(lines))
+        out("SubagentStart", "\n".join(lines_of(f"Team decisions for feature `{feature}` (binding; recorded with `twbuild decide`):", decs)))
         return
     if event == "PreToolUse":
         since = mark.get("t", "")
@@ -64,9 +84,7 @@ def main():
         if not decs:
             return
         util.write_json(mark_path, {"t": util.now(), "feature": feature})
-        lines = ["New team decisions since you started (follow them; if one contradicts your work, adapt or report blocked):"]
-        lines += [f"- {d['id']} [{d['status']}] `{d['topic']}` — {d['text']} (by {d['by']})" for d in decs]
-        out("PreToolUse", "\n".join(lines))
+        out("PreToolUse", "\n".join(lines_of("New team decisions since you started (follow them; if one contradicts your work, adapt or report blocked):", decs)))
 
 
 if __name__ == "__main__":

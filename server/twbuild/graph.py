@@ -167,8 +167,9 @@ def _ts(s):
     return datetime.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp() if s else None
 
 
-def _stream(root, which, app, cfg, inp):
-    """debug 스트림으로 돌리며 노드 실행 시간을 잰다 — interrupt 없이 끝난 실행만 기록 (재개 때 다시 돈 노드는 그 완료분만 한 번)."""
+def _stream(root, which, app, cfg, inp, feature=None):
+    """debug 스트림으로 돌리며 노드 실행 시간을 잰다 — interrupt 없이 끝난 실행만 기록 (재개 때 다시 돈 노드는 그 완료분만 한 번).
+    사이클 기록에는 기능을 붙인다(노드 결과의 feature 가 우선 — intake 가 새 기능을 정한 직후)."""
     started = {}
     for ev in app.stream(inp, cfg, stream_mode="debug"):
         p = ev.get("payload") or {}
@@ -180,12 +181,14 @@ def _stream(root, which, app, cfg, inp):
             if p.get("interrupts"):
                 continue
             ms = (t1 - t0) * 1000 if (t0 and t1) else 0.0
-            metrics.node_done(root, which, name, step, ms, error=p.get("error"))
-            _node_metrics(root, which, name, step, p.get("result"))
+            result = p.get("result")
+            feat = ((result.get("feature") if isinstance(result, dict) else None) or feature) if which == "cycle" else None
+            metrics.node_done(root, which, name, step, ms, error=p.get("error"), feature=feat)
+            _node_metrics(root, which, name, step, result, feat)
 
 
-def _node_metrics(root, which, name, step, result):
-    """노드 결과에서 지표를 뽑는다 — 노드 안이 아니라 구동 래퍼에서 (재개 중복 없음). smoke 의 시도 · 층별 결과, merge 의 화면 완료."""
+def _node_metrics(root, which, name, step, result, feature=None):
+    """노드 결과에서 지표를 뽑는다 — 노드 안이 아니라 구동 래퍼에서 (재개 중복 없음). smoke 의 시도 · 층별 결과 · 빌드 시간, merge 의 화면 완료."""
     if which != "cycle" or not isinstance(result, dict):
         return
     if name == "smoke":
@@ -195,11 +198,11 @@ def _node_metrics(root, which, name, step, result):
             for plat, r in (res or {}).items():
                 if not isinstance(r, dict):
                     continue
-                metrics.record(root, "smoke", key=f"smoke:{tid}:{plat}:{step}", task=tid, platform=plat, step=step,
-                               static=(r.get("static") or {}).get("status"), build=(r.get("build") or {}).get("status"),
+                metrics.record(root, "smoke", key=f"smoke:{tid}:{plat}:{step}", task=tid, platform=plat, step=step, feature=feature,
+                               static=(r.get("static") or {}).get("status"), build=(r.get("build") or {}).get("status"), build_ms=(r.get("build") or {}).get("ms"),
                                violations=[v["rule"] for v in (r.get("static") or {}).get("violations") or []], passed=result.get("phase") == "merge")
     elif name == "merge" and result.get("phase") in ("build", "done"):
-        metrics.record(root, "merged", key=f"merged:{step}", step=step, cursor=result.get("cursor"))
+        metrics.record(root, "merged", key=f"merged:{step}", step=step, cursor=result.get("cursor"), feature=feature)
 
 
 def run(root, which, resume=None):
@@ -213,11 +216,12 @@ def run(root, which, resume=None):
         p = _pending(app, cfg)
         if p and resume is None:
             return p, app.get_state(cfg).values
+        feature = (app.get_state(cfg).values or {}).get("feature") if which == "cycle" else None
         if p:
             # 빈 객체("그대로 진행")도 재개 값이어야 한다 — LangGraph 는 falsy 재개 값을 "재개 없음" 으로 본다
-            _stream(root, which, app, cfg, Command(resume=resume if resume else {"ok": True}))
+            _stream(root, which, app, cfg, Command(resume=resume if resume else {"ok": True}), feature)
         else:
-            _stream(root, which, app, cfg, {"root": root, "log": []})
+            _stream(root, which, app, cfg, {"root": root, "log": []}, feature)
         return _pending(app, cfg), app.get_state(cfg).values
 
 

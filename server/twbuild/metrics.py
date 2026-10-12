@@ -49,10 +49,10 @@ def record(root, ev, key=None, **fields):
     return True
 
 
-def node_done(root, graph, node, step, ms, error=None):
-    """노드 실행 — interrupt 없이 끝난 실행만 (graph.run 이 debug 스트림에서 잰다)."""
+def node_done(root, graph, node, step, ms, error=None, feature=None):
+    """노드 실행 — interrupt 없이 끝난 실행만 (graph.run 이 debug 스트림에서 잰다). 사이클 노드는 기능을 붙여 기능별 요약에 쓴다."""
     return record(root, "node", key=f"{graph}:{node}:{step}", graph=graph, node=node, step=step, ms=round(ms, 1),
-                  **({"error": str(error)[:200]} if error else {}))
+                  **({"error": str(error)[:200]} if error else {}), **({"feature": feature} if feature else {}))
 
 
 def task_issued(root, graph, task, step):
@@ -126,31 +126,169 @@ def _fmt_ms(ms):
     return f"{m}m{s:02d}s" if m < 60 else f"{m // 60}h{m % 60:02d}m"
 
 
-def screens_table(root):
-    """화면(과제)별 — 시도 · 정적/빌드 결과 · 개발자 과제 시간 · 토큰 (smoke · agent 이벤트에서)."""
+def _row():
+    return {"attempts": 0, "static_fail": 0, "build_fail": 0, "build_ms": 0.0, "violations": [], "passed": False, "first_try": None, "ms": 0.0, "tokens": 0, "agents": 0}
+
+
+def screen_rows(root, feature=None):
+    """(과제, 플랫폼) → 시도 · 정적/빌드 실패 · 빌드 시간 · 개발자 시간 · 토큰. feature 를 주면 그 기능의 이벤트만(기능이 없는 옛 기록은 포함)."""
     rows = {}
     for e in events(root):
+        if feature and e.get("feature") and e.get("feature") != feature:
+            continue
         if e.get("ev") == "smoke":
-            r = rows.setdefault((e.get("task"), e.get("platform")), {"attempts": 0, "static_fail": 0, "build_fail": 0, "violations": [], "passed": False, "ms": 0.0, "tokens": 0, "agents": 0})
+            r = rows.setdefault((e.get("task"), e.get("platform")), _row())
             r["attempts"] += 1
             r["static_fail"] += 1 if e.get("static") == "fail" else 0
             r["build_fail"] += 1 if e.get("build") == "fail" else 0
+            r["build_ms"] += e.get("build_ms") or 0
             r["violations"] += e.get("violations") or []
             r["passed"] = r["passed"] or bool(e.get("passed"))
+            if r["first_try"] is None:
+                r["first_try"] = bool(e.get("passed"))
         elif e.get("ev") == "agent":
-            r = rows.setdefault((e.get("task"), e.get("platform")), {"attempts": 0, "static_fail": 0, "build_fail": 0, "violations": [], "passed": False, "ms": 0.0, "tokens": 0, "agents": 0})
+            r = rows.setdefault((e.get("task"), e.get("platform")), _row())
             r["agents"] += 1
             r["ms"] += e.get("ms") or 0
             u = e.get("usage") or {}
-            r["tokens"] += int(u.get("input") or 0) + int(u.get("output") or 0)
+            r["tokens"] += int(u.get("input") or 0) + int(u.get("output") or 0) + int(u.get("cache_create") or 0)
+    return rows
+
+
+def screens_table(root):
+    """화면(과제)별 — 시도 · 정적/빌드 결과 · 빌드 시간 · 개발자 과제 시간 · 토큰 (smoke · agent 이벤트에서)."""
+    rows = screen_rows(root)
     if not rows:
         return ""
     lines = ["", "화면 · 플랫폼 (smoke · 개발자 과제)",
-             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
+             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
     for (task, plat), r in sorted(rows.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
         viol = ",".join(sorted(set(r["violations"]))) or "-"
-        lines.append(f"  {str(task):<12}{str(plat):<9}{r['attempts']:>4}{r['static_fail']:>8}{r['build_fail']:>8}{'✅' if r['passed'] else '—':>5}"
+        lines.append(f"  {str(task):<12}{str(plat):<9}{r['attempts']:>4}{r['static_fail']:>8}{r['build_fail']:>8}{_fmt_ms(r['build_ms'] or None):>9}{'✅' if r['passed'] else '—':>5}"
                      f"{_fmt_ms(r['ms'] if r['agents'] else None):>10}{(r['tokens'] or '-'):>9}  {viol}")
+    return "\n".join(lines)
+
+
+# ─────────────────────────── 기능별 요약 (merge 가 쓰고 커밋한다) ───────────────────────────
+
+CYCLES_DIR = "cycles"
+
+
+def _count_nodes(n):
+    if not isinstance(n, dict):
+        return 0
+    return 1 + sum(_count_nodes(c) for c in n.get("children") or [])
+
+
+def feature_summary(root, feature):
+    """기능 하나의 측정 요약 — 화면 · 트리 노드 수 · 과제별 시도 · 첫 시도 통과율 · 빌드 · 개발자 시간 · 토큰(노드당) · 결정 수. 경로 없음 · 마스킹."""
+    from . import decide, design, leaks
+    idx = design.index(root)
+    screens, tree_nodes = [], 0
+    for key, v in sorted(idx["screens"].items()):
+        feat, sid = key.split("/", 1)
+        if feat != feature:
+            continue
+        screens.append(sid)
+        lay = util.read_json(os.path.join(root, v.get("layout") or ""), {}) if v.get("layout") else {}
+        tree_nodes += _count_nodes((lay or {}).get("root") or (lay or {}).get("tree") or lay)
+    rows = screen_rows(root, feature)
+    tasks = {}
+    for (tid, plat), r in rows.items():
+        if tid not in screens and tid not in ("data", "ds"):
+            continue
+        t = tasks.setdefault(tid, {"attempts": 0, "first_try": True, "passed": True, "platforms": {}})
+        t["attempts"] = max(t["attempts"], r["attempts"])
+        t["first_try"] = t["first_try"] and bool(r["first_try"])
+        t["passed"] = t["passed"] and r["passed"]
+        t["platforms"][plat] = {k: r[k] for k in ("attempts", "static_fail", "build_fail", "build_ms", "ms", "tokens", "agents")}
+        t["platforms"][plat]["violations"] = sorted(set(r["violations"]))
+    nodes = {}
+    for e in events(root):
+        if e.get("ev") == "node" and e.get("graph") == "cycle" and e.get("feature") == feature:
+            n = nodes.setdefault(e["node"], {"count": 0, "ms": 0.0})
+            n["count"] += 1
+            n["ms"] += e.get("ms") or 0
+    agent_ms = sum(p["ms"] for t in tasks.values() for p in t["platforms"].values())
+    tokens = sum(p["tokens"] for t in tasks.values() for p in t["platforms"].values())
+    measured_agents = sum(p["agents"] for t in tasks.values() for p in t["platforms"].values())
+    decs = [d for d in decide.ledger(root)["decisions"] if d.get("feature") == feature]
+    done = [t for t in tasks.values() if t["passed"]]
+    out = {"feature": feature, "t": util.now(), "ver": {**util.plugin_version(), "config": config.digest(config.load(root))},
+           "screens": screens, "tree_nodes": tree_nodes, "tasks": tasks, "nodes": nodes,
+           "first_try_pass_rate": (sum(1 for t in done if t["first_try"]) / len(done)) if done else None,
+           "attempts_per_task": (sum(t["attempts"] for t in tasks.values()) / len(tasks)) if tasks else None,
+           "build_ms": sum(p["build_ms"] for t in tasks.values() for p in t["platforms"].values()),
+           "agent_ms": agent_ms if measured_agents else None, "tokens": tokens if measured_agents else None,
+           "per_node": {"agent_ms": (agent_ms / tree_nodes) if (measured_agents and tree_nodes) else None,
+                        "tokens": (tokens / tree_nodes) if (measured_agents and tree_nodes) else None},
+           "decisions": {"total": len(decs), "confirmed": sum(d["status"] == "confirmed" for d in decs),
+                         "tentative": sum(d["status"] == "tentative" for d in decs), "flipped": sum(d["status"] == "flipped" for d in decs)},
+           "unmeasured": {"agents": sum(1 for t in tasks.values() for p in t["platforms"].values() if not p["agents"]),
+                          "builds": sum(1 for t in tasks.values() for p in t["platforms"].values() if not p["build_ms"])}}
+    return leaks.mask_all_deep(out)
+
+
+def write_feature_summary(root, feature):
+    """`.twbuild/metrics/cycles/<기능>.json` — merge 가 쓰고 ledger 커밋에 넣는다. → 상대 경로."""
+    rel = os.path.join(util.TW_DIR, util.METRICS_DIR, CYCLES_DIR, f"{feature}.json")
+    util.write_json(os.path.join(root, rel), feature_summary(root, feature))
+    return rel
+
+
+def summaries(root):
+    d = os.path.join(_dir(root), CYCLES_DIR)
+    out = []
+    try:
+        for n in sorted(os.listdir(d)):
+            if n.endswith(".json"):
+                s = util.read_json(os.path.join(d, n), None)
+                if s:
+                    out.append(s)
+    except OSError:
+        pass
+    return out
+
+
+def _rate(x):
+    return "못 잼" if x is None else f"{x * 100:.0f}%"
+
+
+def _num(x, fmt="{:.0f}"):
+    return "못 잼" if x is None else fmt.format(x)
+
+
+def compare_table(root):
+    """`twbuild stats --compare` — 기능(사이클)별 한 줄: 같은 잣대(노드당)로 비교한다."""
+    ss = summaries(root)
+    if not ss:
+        return "기능별 요약이 없다 — 머지가 한 번 끝나면 .twbuild/metrics/cycles/ 에 쌓인다."
+    lines = ["기능별 비교 (merge 요약 · 노드당 정규화)",
+             f"  {'기능':<12}{'화면':>4}{'노드':>5}{'첫시도 통과':>10}{'시도/과제':>9}{'빌드 합':>9}{'개발자/노드':>11}{'토큰/노드':>10}  버전"]
+    for s in ss:
+        pn = s.get("per_node") or {}
+        ver = s.get("ver") or {}
+        lines.append(f"  {s['feature']:<12}{len(s.get('screens') or []):>4}{s.get('tree_nodes') or 0:>5}{_rate(s.get('first_try_pass_rate')):>10}"
+                     f"{_num(s.get('attempts_per_task'), '{:.1f}'):>9}{_fmt_ms(s.get('build_ms') or None):>9}{_fmt_ms(pn.get('agent_ms')):>11}{_num(pn.get('tokens')):>10}"
+                     f"  {ver.get('plugin', '?')}@{ver.get('commit', '?')}")
+    return "\n".join(lines)
+
+
+def feature_table(root, feature):
+    """`twbuild stats --feature <기능>` — 그 기능의 요약을 표로."""
+    s = next((x for x in summaries(root) if x.get("feature") == feature), None)
+    if not s:
+        return f"{feature}: 요약이 없다 (머지 전이거나 다른 기능 이름)."
+    d = s.get("decisions") or {}
+    lines = [f"{feature} — 화면 {len(s.get('screens') or [])}개 · 트리 노드 {s.get('tree_nodes')}개 · 첫 시도 통과 {_rate(s.get('first_try_pass_rate'))} · "
+             f"결정 {d.get('total', 0)}(확정 {d.get('confirmed', 0)} · 잠정 {d.get('tentative', 0)}) · {s.get('ver', {}).get('plugin', '?')}@{s.get('ver', {}).get('commit', '?')}",
+             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'개발자 시간':>10}{'토큰':>9}  위반"]
+    for tid, t in sorted((s.get("tasks") or {}).items()):
+        for plat, p in sorted(t["platforms"].items()):
+            lines.append(f"  {tid:<12}{plat:<9}{p['attempts']:>4}{p['static_fail']:>8}{p['build_fail']:>8}{_fmt_ms(p['build_ms'] or None):>9}"
+                         f"{_fmt_ms(p['ms'] if p['agents'] else None):>10}{(p['tokens'] or '-'):>9}  {','.join(p.get('violations') or []) or '-'}")
+    u = s.get("unmeasured") or {}
+    lines.append(f"  못 잼: 개발자 과제 {u.get('agents', 0)} · 빌드 {u.get('builds', 0)}")
     return "\n".join(lines)
 
 

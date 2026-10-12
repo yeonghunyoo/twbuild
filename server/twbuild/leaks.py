@@ -97,13 +97,20 @@ def mask_all_deep(obj):
 def find(text):
     """[(규칙, 매치 문자열)] — 자리표시 값은 걸지 않는다."""
     hits = []
+    text = text or ""
     for name, rx in SECRET_RES:
-        for m in rx.finditer(text or ""):
+        for m in rx.finditer(text):
             val = m.group(2) if name == "assignment" else m.group(0)
             if name == "assignment" and (_PLACEHOLDER.match(val) or "${" in val or val.isupper()):
                 continue
+            if name == "assignment" and _EXAMPLE_LINE.search(text[text.rfind("\n", 0, m.start()) + 1:(text.find("\n", m.end()) if text.find("\n", m.end()) >= 0 else len(text))]):
+                continue                                 # 같은 줄에 example · sample … 이 있으면 문서 예시다 (계약의 응답 예시)
             hits.append((name, val))
     return hits
+
+
+_EXAMPLE_LINE = re.compile(r"(?i)\b(example|examples|sample|placeholder|dummy|fixture)\b")
+_LOW_RISK_PATH = re.compile(r"(^|/)(api|design|docs?)/|\.(md|example|sample)$", re.I)       # 계약 · 디자인 원본 · 문서 — 예시 값이 많아 일반 규칙(assignment)은 안 본다
 
 
 def mask(text):
@@ -136,3 +143,42 @@ def is_sensitive_file(rel):
     if SENSITIVE_DIR_RE.search(rel):
         return True
     return any(fnmatch.fnmatch(name, g) for g in SENSITIVE_GLOBS)
+
+
+# ─────────────────────────── 파일 검사 (pre-commit · 머지) ───────────────────────────
+
+SCAN_MAX_BYTES = 1_048_576
+
+
+def _peek(val):
+    return (val[:3] + MASK) if isinstance(val, str) else MASK
+
+
+def scan_text(rel, text):
+    """파일 하나 — [(규칙, 엿보기)]. 민감 파일 이름이면 ('sensitive-file', 이름)도. 값은 앞 3글자만 보인다."""
+    hits = [("sensitive-file", rel)] if is_sensitive_file(rel) else []
+    low_risk = bool(_LOW_RISK_PATH.search(rel.replace(os.sep, "/")))
+    hits += [(name, _peek(val)) for name, val in find(text or "") if not (low_risk and name == "assignment")]
+    return hits
+
+
+def scan_files(root, rels, reader=None):
+    """[(경로, 규칙, 엿보기)]. reader(rel) 가 본문을 주면 그것을(스테이지 · 브랜치), 없으면 디스크. 바이너리 · 1 MiB 초과는 이름만 본다."""
+    out = []
+    for rel in rels:
+        text = ""
+        if reader:
+            try:
+                text = reader(rel) or ""
+            except Exception:
+                text = ""
+        else:
+            p = os.path.join(root, rel)
+            try:
+                if os.path.isfile(p) and os.path.getsize(p) <= SCAN_MAX_BYTES:
+                    with open(p, encoding="utf-8") as f:
+                        text = f.read()
+            except (OSError, UnicodeDecodeError):
+                text = ""
+        out += [(rel, name, peek) for name, peek in scan_text(rel, text)]
+    return out

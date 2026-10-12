@@ -478,6 +478,16 @@ def cycle_graph_end_to_end():
         check("screen(mini/home): ios" in log and "screen(mini/home): android" in log and "screen/mini/home" in _git(root, "tag"), log)
         # 원장 · 결정 · brief 는 머지가 커밋한다 (그 뒤 prepare(stats) 가 index 를 다시 바꾸므로 작업 트리가 아니라 이력으로 본다)
         check("ledger(mini/home)" in _git(root, "log", "--oneline", "--", "design/index.json", ".claude/rules/team", "features/mini"), log)
+        # 기능 측정 요약 · 설정 잠금도 커밋된다 (13장 · 설정) — 잠긴 값을 바꾸면 config 검사가 잡는다
+        check(os.path.isfile(util.tw(root, "metrics", "cycles", "mini.json")) and os.path.isfile(util.tw(root, "lock.json")), "요약 · 잠금 파일")
+        check("mini.json" in _git(root, "log", "--name-only", "--", ".twbuild/metrics/cycles") and "lock.json" in _git(root, "log", "--name-only", "--", ".twbuild/lock.json"), "요약 · 잠금 커밋")
+        summ = util.read_json(util.tw(root, "metrics", "cycles", "mini.json"))
+        check(summ["feature"] == "mini" and summ["tree_nodes"] > 0 and "home" in summ["tasks"] and "data" in summ["tasks"], summ)
+        check("mini" in metrics.compare_table(root) and "home" in metrics.feature_table(root, "mini"), metrics.compare_table(root))
+        cfg2 = config.load(root)
+        cfg2["min_os"]["ios"] = 18
+        check(config.locked_problems(root, cfg2) and not config.locked_problems(root, config.load(root)), "잠금 판정")
+        check(not [c for c in probe.checks(root, config.load(root), probe._light_toolchain()) if c["id"] == "config" and c["ok"] is not True], "config 검사 통과")
         check(design.index(root)["screens"]["mini/home"]["status"] == "consumed", design.index(root)["screens"]["mini/home"])
         check(not os.path.isdir(wt), "워크트리 제거")
         check(os.path.isfile(os.path.join(root, ".twbuild/reports/mini/home.md")) and "D-01" in util.read_text(os.path.join(root, ".twbuild/reports/mini/home.md")), "보고서에 결정")
@@ -540,5 +550,82 @@ def main(argv):
     return 1 if failed else 0
 
 
+
+@case
+def secret_scan_and_precommit():
+    """11장 — 파일 검사 · wire 가 설치한 pre-commit 훅이 시크릿 커밋을 막는다 · 다른 훅은 건드리지 않는다 · 계약 예시는 거짓 양성이 아니다."""
+    root = _wired_repo()
+    try:
+        util.write_text(os.path.join(root, "apps", "note.swift"), 'let token = "ghp_' + "a" * 36 + '"\n')
+        hits = leaks.scan_files(root, ["apps/note.swift", ".env.local", "api/fragments/auth.yaml"])
+        check(any(k == "sensitive-file" and r == ".env.local" for r, k, _ in hits) and any(r == "apps/note.swift" and k == "github-token" for r, k, _ in hits), hits)
+        check(not [h for h in hits if h[0] == "api/fragments/auth.yaml"], hits)
+        check(not any(v.startswith("ghp_aaaa") for _, _, v in hits), "값은 엿보기만")
+        check(git.hook_installed(root, "pre-commit", git.PRECOMMIT_MARK), "훅 설치")
+        subprocess.run(["git", "-C", root, "add", "apps/note.swift"], check=True)
+        r = subprocess.run(["git", "-C", root, "commit", "-q", "-m", "leak"], capture_output=True, text=True)
+        check(r.returncode != 0 and "커밋 거부" in (r.stdout + r.stderr), (r.returncode, r.stdout[-300:], r.stderr[-300:]))
+        util.write_text(os.path.join(root, "apps", "note.swift"), "let token = Secrets.token\n")
+        subprocess.run(["git", "-C", root, "add", "apps/note.swift"], check=True)
+        r = subprocess.run(["git", "-C", root, "commit", "-q", "-m", "clean"], capture_output=True, text=True)
+        check(r.returncode == 0, r.stderr[-300:])
+        hp = os.path.join(git.hooks_dir(root), "pre-commit")
+        util.write_text(hp, "#!/bin/sh\nexit 0\n")
+        check(setup.install_precommit(root) is None and "twbuild" not in util.read_text(hp), "다른 훅 보존")
+        # 머지 전 검사: 브랜치에 시크릿이 있으면 blocked
+        subprocess.run(["git", "-C", root, "checkout", "-q", "-b", "twbuild/ios-x"], check=True)
+        util.write_text(os.path.join(root, "apps", "k.kt"), 'val k = "AKIA' + "A" * 16 + '"\n')
+        subprocess.run(["git", "-C", root, "add", "apps/k.kt"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-q", "--no-verify", "-m", "leak"], check=True)
+        subprocess.run(["git", "-C", root, "checkout", "-q", "main"], check=True)
+        hits = leaks.scan_files(root, git.changed_files(root, "HEAD", "twbuild/ios-x"), reader=lambda rel: git.show(root, f"twbuild/ios-x:{rel}"))
+        check([h for h in hits if h[0] == "apps/k.kt" and h[1] == "aws-access-key"], hits)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+@case
+def decisions_hook_cap():
+    """결정 주입은 6 KB 상한 — 확정 먼저, 넘치면 개수와 `twbuild decide` 안내 (실측: 15 KB 는 잘려 2 KB 만 보였다)."""
+    from twbuild import decide
+    root = _wired_repo()
+    try:
+        util.write_json(util.tw(root, "tasks", "_current.json"), {"feature": "mini", "task": {"id": "home"}})
+        for i in range(40):
+            decide.record(root, f"n.home.column0.text{i}", "x" * 400, "ios")
+        decide.confirm(root, "D-40")
+        out = _hook("decisions.py", {"hook_event_name": "SubagentStart", "agent_id": "cap-1", "agent_type": "twbuild:ios-dev", "cwd": root, "session_id": "t"})
+        ctx = out["additionalContext"]
+        check(len(ctx) <= 6300 and "more not shown" in ctx and "twbuild decide" in ctx, len(ctx))
+        check(ctx.splitlines()[1].startswith("- D-40 [confirmed]"), ctx.splitlines()[1][:60])
+        check("xxxx…" in ctx and "x" * 300 not in ctx, "본문 축약")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+@case
+def gitignore_block_upgrade():
+    """옛 .gitignore 블록(.twbuild/ 전체 무시)은 wire 가 새 블록(측정 요약 · 잠금 커밋)으로 바꾼다."""
+    root = _wired_repo()
+    try:
+        ig = os.path.join(root, ".gitignore")
+        cur = util.read_text(ig)
+        old = cur.replace(".twbuild/*\n!.twbuild/metrics/\n.twbuild/metrics/*\n!.twbuild/metrics/cycles/\n!.twbuild/lock.json\n", ".twbuild/\n")
+        check(old != cur, "치환 전제")
+        util.write_text(ig, old + "\n# mine\nfoo/\n")
+        done = setup.wire(root, {})
+        new = util.read_text(ig)
+        check(".gitignore(갱신)" in done and ".twbuild/*" in new and "\n.twbuild/\n" not in new and "# mine\nfoo/" in new, (done, new[-200:]))
+        check(setup.wire(root, {}) == [] or ".gitignore" not in " ".join(setup.wire(root, {})), "멱등")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 if __name__ == "__main__":
+    sys.modules.setdefault("cases", sys.modules[__name__])          # 형제 모듈의 `from cases import case` 가 이 인스턴스를 보게
+    for _m in ("cases_device", "cases_skills", "cases_gen"):
+        try:
+            __import__(_m)
+        except ImportError:
+            pass
     sys.exit(main(sys.argv))

@@ -16,7 +16,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, draft, gate, git, tokens, tree, util, yaml_lite
+from . import config, contract, decide, design, draft, gate, git, leaks, metrics, setup, tokens, tree, util, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -244,6 +244,7 @@ def n_prepare(s):
     if not task:
         return {"phase": "done", "log": ["prepare:none"]}
     cfg = config.load(root)
+    setup.install_precommit(root)                        # 개발자 커밋 전 시크릿 검사 — 워크트리도 같은 훅을 쓴다 (멱등)
     vars_ = config.app_vars(cfg)
     lays = _layouts(root, feature)
     prepared = {}
@@ -402,6 +403,15 @@ def n_merge(s):
             return {"phase": "blocked", "blocked": {"reason": "tree changed during build", "job": task,
                                                     "detail": f"원장 트리 {cur} ≠ 빌드 트리 {built} — 새 design run 이 들어왔다. 재작업 과제로 다시 만든다."},
                     "log": [f"merge:stale:{task['id']}"]}
+    for p in cfg.get("platforms") or []:                 # 머지 전 시크릿 · 민감 파일 검사 — 브랜치가 바꾼 파일 전부 (11장)
+        b = git.branch(worktree_name(p, task["id"]))
+        if git.branch_exists(root, b):
+            hits = leaks.scan_files(root, git.changed_files(root, "HEAD", b), reader=lambda rel, b=b: git.show(root, f"{b}:{rel}"))
+            if hits:
+                return {"phase": "blocked", "blocked": {"reason": "secret in branch", "job": task,
+                                                        "detail": f"{b} 에 시크릿 · 민감 파일 의심 {len(hits)}건: " + ", ".join(f"{rel}({kind})" for rel, kind, _ in hits[:6])
+                                                                  + " — 사람이 브랜치에서 지우고(값은 .env.local) submit({}) 으로 다시 돈다"},
+                        "log": [f"merge:secret:{p}"]}
     commits = {}
     for p in cfg.get("platforms") or []:
         name = worktree_name(p, task["id"])
@@ -412,6 +422,7 @@ def n_merge(s):
             except git.GitError as e:
                 return {"phase": "blocked", "blocked": {"reason": "merge conflict", "job": task, "detail": str(e)}, "log": [f"merge:conflict:{p}"]}
     git.tag(root, f"{task['kind']}/{feature}/{task['id']}", f"{feature}/{task['id']} merged")
+    config.lock(root, cfg)                               # 첫 머지 — architecture · min_os · app.id · app.product 잠김 (14장 · 설정)
     if task["kind"] == "screen":
         try:
             design.set_status(root, key, "consumed", built={"tree": (idx["screens"].get(key) or {}).get("tree"), "commits": commits})
@@ -427,9 +438,11 @@ def n_merge(s):
         git.remove_worktree(root, worktree_name(p, task["id"]))
     rep = evidence(root, feature, task, s, commits)
     util.write_text(os.path.join(root, REPORTS, feature, f"{task['id']}.md"), rep)
-    # 원장(design/index.json) · 결정(.claude/rules/team) · brief 는 커밋 대상이다 — 머지마다 main 에 남긴다 (AGENT.md 2장 · 5장)
-    git.commit_paths(root, f"ledger({feature}/{task['id']}): index · decisions · brief",
-                     os.path.join("design", "index.json"), os.path.join(".claude", "rules", "team"), os.path.join(util.FEATURES_DIR, feature))
+    # 원장(design/index.json) · 결정(.claude/rules/team) · brief · 기능 측정 요약(13장) · 설정 잠금은 커밋 대상이다 — 머지마다 main 에 남긴다
+    summary_rel = metrics.write_feature_summary(root, feature)
+    git.commit_paths(root, f"ledger({feature}/{task['id']}): index · decisions · brief · metrics",
+                     os.path.join("design", "index.json"), os.path.join(".claude", "rules", "team"), os.path.join(util.FEATURES_DIR, feature),
+                     summary_rel, os.path.join(util.TW_DIR, config.LOCK))
     reports = list(s.get("reports") or []) + [rep]
     cursor = s.get("cursor", 0) + 1
     return {"phase": "build" if cursor < len(s.get("order") or []) else "done", "cursor": cursor, "reports": reports, "blocked": None,
