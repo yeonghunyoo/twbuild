@@ -15,6 +15,7 @@ CSS → native translation is in your translate skill; rule IDs are in harness-r
 3. Work top-down through the tree: for each node, translate its `// style:` comment, keep its identifier, keep the nesting.
    Then the ViewModel (Action → UiState), then data wiring, then navigation. Icons and assets last.
 4. Build incrementally after each coherent step (a component, a section, the ViewModel). Full build + no errors before you finish.
+5. Before you finish run `twbuild check` from your worktree: the static gate (T1~T6) for your screen, parity with the other platform once its worktree exists, `--build` adds the platform build. It is the same code the smoke runs, so a clean check means the smoke will only re-measure build · contract · device.
 
 ## Errors
 - Fix compile errors first, then gate rule violations (IDs in harness-rules), then warnings that affect behavior.
