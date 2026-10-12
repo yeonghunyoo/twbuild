@@ -154,6 +154,10 @@ def checks(root, cfg=None, t=None):
     want = [r for r in rows if r.get("source") and not r.get("human")]
     out.append(_check("skills", "공개 스킬 설치(.claude/skills)", (all(r["installed"] for r in want) if want else None), skills.summary(rows),
                       "twbuild skills install" if want and not all(r["installed"] for r in want) else "", "개발자 스킬(필요할 때 호출)", 1))
+    from . import fonts
+    fst = fonts.status(root, cfg)
+    out.append(_check("fonts", "웹폰트(styles.css → 두 앱 등록)", (not fst["missing"]) if fst.get("families") else None, fonts.summary(fst),
+                      "twbuild fonts fetch 뒤 twbuild fonts install" if fst.get("missing") else "", "타이포그래피", 1))
     trust = _trusted(root)
     out.append(_check("trust", "워크스페이스 신뢰(allow 목록 적용)", trust,
                       "" if trust else ("~/.claude.json 에 기록 없음 — 헤드리스(claude -p) 세션은 이 레포의 allow 목록을 무시한다" if trust is False else "~/.claude.json 못 읽음"),

@@ -31,15 +31,9 @@ def wire(root, pr):
         plats = avail if avail else list(config.PLATFORMS)
         config.write_template(root, {"platforms": "[" + ", ".join(plats) + "]"})
         done.append("config.yaml")
-    ig = os.path.join(root, ".gitignore")
-    cur = util.read_text(ig)
-    block = util.read_text(os.path.join(util.TEMPLATES, "gitignore.block"))
-    if GITIGNORE_MARK not in cur:
-        util.write_text(ig, (cur.rstrip("\n") + "\n\n" if cur.strip() else "") + block)
-        done.append(".gitignore")
-    elif ".twbuild/*" not in cur:                        # 옛 블록(.twbuild/ 전체 무시) → 측정 요약 · 잠금을 커밋하는 새 블록
-        util.write_text(ig, _replace_block(cur, block))
-        done.append(".gitignore(갱신)")
+    got = ensure_gitignore(root)
+    if got:
+        done.append(got)
     md = os.path.join(root, "CLAUDE.md")
     cur = util.read_text(md)
     if CLAUDE_MARK not in cur:
@@ -64,6 +58,31 @@ def wire(root, pr):
         if got.get("errors"):
             done.append(f"skills 실패:{len(got['errors'])}")
     return done
+
+
+def ensure_gitignore(root):
+    """twbuild 블록을 .gitignore 에 둔다 — 없으면 추가, 템플릿과 다르면(옛 블록 · 새 줄) 갱신. 사람 줄은 블록 밖이라 그대로. → 무엇을 했는지 또는 None."""
+    ig = os.path.join(root, ".gitignore")
+    cur = util.read_text(ig)
+    block = util.read_text(os.path.join(util.TEMPLATES, "gitignore.block"))
+    if GITIGNORE_MARK not in cur:
+        util.write_text(ig, (cur.rstrip("\n") + "\n\n" if cur.strip() else "") + block)
+        return ".gitignore"
+    if _block_of(cur) != block.rstrip("\n"):
+        util.write_text(ig, _replace_block(cur, block))
+        return ".gitignore(갱신)"
+    return None
+
+
+def _block_of(cur):
+    lines = cur.split("\n")
+    start = next((i for i, l in enumerate(lines) if l.startswith(GITIGNORE_MARK)), None)
+    if start is None:
+        return ""
+    end = start
+    while end < len(lines) and lines[end].strip():
+        end += 1
+    return "\n".join(lines[start:end])
 
 
 def _replace_block(cur, block):
@@ -226,6 +245,8 @@ def scaffold(root, answers=None):
         _emit(root, os.path.join(util.FRAGMENTS_DIR, rel), util.render(text, vars_), log, out)
     out["generated"] = contract.write_generated(root)
     out["client"] = gen.write(root, cfg)                 # 계약 → Swift · Kotlin 모델 · 클라이언트 (생성물, 1장)
+    from . import fonts
+    out["fonts"] = (fonts.install(root, cfg)["ios"] + fonts.install(root, cfg)["android"]) if fonts.index(root) else []     # 받아 둔 웹폰트를 두 앱에 등록
     # placeholders → .env.example · SETUP.md (사람용 문서는 손으로 쓰지 않는다)
     ph = util.read_json(os.path.join(util.TEMPLATES, "placeholders.json"), {}) or {}
     rows = [r for r in ph.get("placeholders", []) if _placeholder_applies(r, cfg)]

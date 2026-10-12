@@ -118,7 +118,7 @@ def _design(a, root):
 def main():
     ap = argparse.ArgumentParser(description="twbuild MCP 서버 · CLI")
     ap.add_argument("cmd", nargs="?", default="serve",
-                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock", "check"])
+                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock", "check", "fonts"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--root", default=None)
     ap.add_argument("--scope", default=None, help="design start: 기능 이름")
@@ -206,9 +206,9 @@ def main():
         from twbuild import mock
         mock.serve(root, a.port)
         return 0
-    if a.cmd in ("device", "skills"):
-        from twbuild import device, skills
-        code, msg = (device if a.cmd == "device" else skills).cli(list(a.args), root)
+    if a.cmd in ("device", "skills", "fonts"):
+        from twbuild import device, fonts, skills
+        code, msg = {"device": device, "skills": skills, "fonts": fonts}[a.cmd].cli(list(a.args), root)
         print(msg)
         return code
     bootstrap_venv()

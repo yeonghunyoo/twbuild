@@ -18,6 +18,7 @@ google-services.json
 GoogleService-Info.plist
 features/*/refs/
 apps/ios/*.xcodeproj
+apps/ios/App/Info.plist
 apps/ios/DerivedData/
 apps/android/.gradle/
 apps/android/build/

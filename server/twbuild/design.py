@@ -301,6 +301,9 @@ def finish(root, spec=None, commit=True):
             screens_out[f"{run['scope']}/{sc['id']}"] = {"tree": lay["hash"], "layout": rel, "source": f["dest"], "ok": lay["root"] is not None}
             statuses.append(tree.status(lay))
     token_files = tokens.write(root, cfg) if tk is not None else []
+    from . import fonts                              # styles.css 의 웹폰트 → design/ds/fonts(스냅샷) → 두 앱 등록 · Fonts.swift/kt (2장)
+    fonts_out = fonts.fetch(root) if (tk is not None and not os.environ.get("TWBUILD_OFFLINE")) else {"files": [], "skipped": [], "errors": []}
+    fonts_inst = fonts.install(root, cfg) if fonts.index(root) else {"ios": [], "android": [], "errors": []}
     diff = {"added": [], "changed": [], "removed": []}
     for key, info in screens_out.items():
         cur = idx["screens"].get(key)
@@ -329,7 +332,10 @@ def finish(root, spec=None, commit=True):
     committed = None
     if commit and git.is_repo(root):
         paths = [util.DESIGN_DIR] + token_files
-        if git.commit_paths(root, f"design-run: {run['id']} ({run['scope']})", *paths):
+        pkg = (cfg.get("app") or {}).get("id", "com.example.app").replace(".", "/")
+    paths = list(paths) + [fonts.FONTS_DIR, "apps/ios/App/Resources/Fonts", "apps/ios/project.yml", "apps/ios/App/Core/DesignSystem",
+                           "apps/android/app/src/main/res/font", f"apps/android/app/src/main/kotlin/{pkg}/core/designsystem"]
+    if git.commit_paths(root, f"design-run: {run['id']} ({run['scope']})", *paths):
             git.tag(root, f"design-run/{run['id']}", f"design run {run['id']} {run['scope']}")
             committed = git.head(root)
     return {"run": run["id"], "scope": run["scope"], "screens": screens_out, "status": statuses, "diff": diff,

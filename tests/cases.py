@@ -660,7 +660,7 @@ def gitignore_block_upgrade():
 
 if __name__ == "__main__":
     sys.modules.setdefault("cases", sys.modules[__name__])          # 형제 모듈의 `from cases import case` 가 이 인스턴스를 보게
-    for _m in ("cases_device", "cases_skills", "cases_gen"):
+    for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts"):
         try:
             __import__(_m)
         except ImportError:

@@ -123,6 +123,17 @@ def commit_paths(cwd, message, *paths):
     return True
 
 
+def merge_main(wt):
+    """워크트리 브랜치에 main 의 새 커밋을 합친다(머지 커밋). 이미 포함돼 있으면 False. 충돌 · 더러운 트리면 되돌리고 GitError."""
+    if run(wt, "merge-base", "--is-ancestor", "main", "HEAD", check=False).returncode == 0:
+        return False
+    r = run(wt, "merge", "-q", "--no-edit", "main", check=False)
+    if r.returncode != 0:
+        run(wt, "merge", "--abort", check=False)
+        raise GitError(f"main 합치기 실패: {(r.stderr or r.stdout).strip()[:300]}")
+    return True
+
+
 def tag(root, name, message=""):
     if run(root, "rev-parse", "--verify", "-q", f"refs/tags/{name}", check=False).returncode == 0:
         return False

@@ -16,7 +16,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, device, draft, gate, gen, git, leaks, metrics, setup, tokens, tree, util, yaml_lite
+from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, leaks, metrics, setup, tokens, tree, util, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -263,11 +263,19 @@ def n_prepare(s):
         return {"phase": "done", "log": ["prepare:none"]}
     cfg = config.load(root)
     setup.install_precommit(root)                        # 개발자 커밋 전 시크릿 검사 — 워크트리도 같은 훅을 쓴다 (멱등)
+    setup.ensure_gitignore(root)                         # .gitignore 블록이 템플릿과 다르면 갱신 (멱등)
     vars_ = config.app_vars(cfg)
     lays = _layouts(root, feature)
     prepared = {}
     for p in cfg.get("platforms") or []:
         wt, created = git.ensure_worktree(root, worktree_name(p, task["id"]))
+        if not created:                                  # 브랜치를 자른 뒤 main 이 움직였다(다른 화면 머지 · 생성물 · 폰트) — 재배차 전에 합친다 (머지 커밋, 이력 재작성 아님)
+            try:
+                git.merge_main(wt)
+            except git.GitError as e:
+                return {"phase": "blocked", "blocked": {"reason": "worktree merge conflict", "job": task,
+                                                        "detail": f"{worktree_name(p, task['id'])} 에 main 을 합치지 못했다 — 사람이 워크트리에서 충돌을 풀고(또는 커밋하고) submit({{}}): {e}"},
+                        "log": [f"prepare:merge-conflict:{p}"]}
         if gen.drift(wt, cfg):                           # 계약 생성물이 브랜치에 없거나 낡았다(브랜치를 자른 뒤 계약이 바뀜) — 결정적이라 다시 쓰고 커밋한다
             gen.write(wt, cfg)
             git.commit_all(wt, "generated(contract): models · client from api/openapi.yaml")
@@ -285,6 +293,10 @@ def n_prepare(s):
     util.write_json(util.tw(root, util.TASKS, "_current.json"), {"t": util.now(), "feature": feature, "task": task,
                                                                 "worktrees": {p: v["worktree"] for p, v in prepared.items()}})
     return {"phase": "dispatch", "dev": {"_prepared": prepared}, "log": [f"prepare:{task['id']}"]}
+
+
+def _after_prepare(s):
+    return "blocked" if s.get("phase") == "blocked" else "dispatch"
 
 
 # ─────────────────────────── dispatch (묻는 노드) ───────────────────────────
@@ -367,7 +379,9 @@ def static_results(root, feature, task, wts, cfg):
     both = [w for w in (wts.get("ios"), wts.get("android")) if w and os.path.isdir(w)]
     if len(both) == 2:
         par = gate.parity_check(wts["ios"], wts["android"], vars_)
-        for extra in (gate.data_parity_check(wts["ios"], wts["android"], vars_), gate.ds_parity_check(wts["ios"], wts["android"], vars_)):   # T6 · T7
+        fp = fonts.parity(wts["ios"], cfg)                                   # T9 — 폰트 등록은 하네스가 main 에서 하므로 어느 워크트리든 같다
+        for extra in (gate.data_parity_check(wts["ios"], wts["android"], vars_), gate.ds_parity_check(wts["ios"], wts["android"], vars_),
+                      {"status": "fail" if fp else "pass", "violations": fp}):   # T6 · T7 · T9
             if extra["status"] == "fail":
                 par = {"status": "fail", "violations": par["violations"] + extra["violations"]}
         for p in res:
@@ -571,7 +585,7 @@ def build_cycle():
     g.add_edge(START, "intake")
     g.add_conditional_edges("intake", _after_intake, {"intake": "intake", "plan": "plan"})
     g.add_conditional_edges("plan", _after_plan, {"plan": "plan", "prepare": "prepare"})
-    g.add_edge("prepare", "dispatch")
+    g.add_conditional_edges("prepare", _after_prepare, {"dispatch": "dispatch", "blocked": "blocked"})
     g.add_conditional_edges("dispatch", _after_dispatch, {"blocked": "blocked", "smoke": "smoke"})
     g.add_conditional_edges("smoke", _after_smoke, {"merge": "merge", "blocked": "blocked", "prepare": "prepare"})
     g.add_conditional_edges("merge", _after_merge, {"prepare": "prepare", "blocked": "blocked", "done": "done"})
