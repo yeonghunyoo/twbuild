@@ -103,14 +103,15 @@ def find(text):
             val = m.group(2) if name == "assignment" else m.group(0)
             if name == "assignment" and (_PLACEHOLDER.match(val) or "${" in val or val.isupper()):
                 continue
-            if name == "assignment" and _EXAMPLE_LINE.search(text[text.rfind("\n", 0, m.start()) + 1:(text.find("\n", m.end()) if text.find("\n", m.end()) >= 0 else len(text))]):
+            if name in GENERIC_RULES and _EXAMPLE_LINE.search(text[text.rfind("\n", 0, m.start()) + 1:(text.find("\n", m.end()) if text.find("\n", m.end()) >= 0 else len(text))]):
                 continue                                 # 같은 줄에 example · sample … 이 있으면 문서 예시다 (계약의 응답 예시)
             hits.append((name, val))
     return hits
 
 
-_EXAMPLE_LINE = re.compile(r"(?i)\b(example|examples|sample|placeholder|dummy|fixture)\b")
-_LOW_RISK_PATH = re.compile(r"(^|/)(api|design|docs?)/|\.(md|example|sample)$", re.I)       # 계약 · 디자인 원본 · 문서 — 예시 값이 많아 일반 규칙(assignment)은 안 본다
+GENERIC_RULES = ("assignment", "connection-string")      # 모양만 보는 규칙 — 예시 · 테스트 픽스처에 흔해 저위험 경로에서는 안 본다
+_EXAMPLE_LINE = re.compile(r"(?i)\b(example|examples|sample|placeholder|dummy|fixture|test)\b")
+_LOW_RISK_PATH = re.compile(r"(^|/)(api|design|docs?|\.claude/skills|tests?|__tests__|spec)/|\.(md|example|sample|test\.[a-z]+|spec\.[a-z]+)$", re.I)   # 계약 · 디자인 원본 · 문서 · 받아 온 스킬 · 테스트
 
 
 def mask(text):
@@ -158,7 +159,7 @@ def scan_text(rel, text):
     """파일 하나 — [(규칙, 엿보기)]. 민감 파일 이름이면 ('sensitive-file', 이름)도. 값은 앞 3글자만 보인다."""
     hits = [("sensitive-file", rel)] if is_sensitive_file(rel) else []
     low_risk = bool(_LOW_RISK_PATH.search(rel.replace(os.sep, "/")))
-    hits += [(name, _peek(val)) for name, val in find(text or "") if not (low_risk and name == "assignment")]
+    hits += [(name, _peek(val)) for name, val in find(text or "") if not (low_risk and name in GENERIC_RULES)]
     return hits
 
 
