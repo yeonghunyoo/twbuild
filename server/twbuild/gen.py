@@ -789,7 +789,7 @@ def _run(cmd, cwd, lf, timeout, env=None):
         return None
 
 
-def decode_check(root, platform, log_path, timeout=900):
+def decode_check(root, platform, log_path, timeout=900, cfg=None):
     """계약의 응답 예시 전부를 생성 모델로 디코딩한다 → {"status": pass|fail|unmeasured, "detail", "log"}.
 
     iOS: Models.swift + 임시 main.swift 를 swiftc 로 묶어 실행. Android: 생성 JUnit 테스트(ContractDecodeTest)를 gradlew 로 실행.
@@ -799,7 +799,7 @@ def decode_check(root, platform, log_path, timeout=900):
     if os.environ.get("TWBUILD_NO_BUILD"):
         return {"status": "unmeasured", "detail": "TWBUILD_NO_BUILD", "log": ""}
     try:
-        cfg = config.load(root)
+        cfg = cfg or config.load(root)                  # 워크트리에는 config 가 없다 — smoke 가 메인 레포 설정을 넘긴다
         doc = contract.merged(root)
     except (contract.ContractError, GenError) as e:
         return {"status": "fail", "detail": f"계약 오류: {e}", "log": ""}

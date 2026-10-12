@@ -56,7 +56,10 @@ def record(cwd, topic, text, by):
             return root, d, False
     feature, screen = feature_of(root, topic)
     did = f"D-{len(led['decisions']) + 1:02d}"
-    d = {"id": did, "topic": topic, "text": text.strip(), "by": by, "t": util.now(), "feature": feature, "screen": screen, "status": "tentative"}
+    d = {"id": did, "topic": topic, "text": text.strip(), "by": by, "t": util.now(), "feature": feature, "screen": screen,
+         "status": "confirmed" if by == "lead" else "tentative"}        # lead 의 결정은 바로 확정 — 개발자 것만 잠정
+    if by == "lead":
+        d["confirmed_t"] = d["t"]
     led["decisions"].append(d)
     _save(root, led)
     return root, d, True
@@ -154,5 +157,5 @@ def cli(argv, cwd):
         raise DecideError('decide <노드 ID> "<해석>" --by ios|android|lead')
     root, d, new = record(cwd, argv[0], " ".join(argv[1:]), by)
     if new:
-        return 0, f"{d['id']} 기록(잠정): {d['topic']} — {d['text']}. 상대 플랫폼에는 훅이 주입한다."
+        return 0, f"{d['id']} 기록({'확정' if d['status'] == 'confirmed' else '잠정'}): {d['topic']} — {d['text']}. 개발자에게는 훅이 주입한다."
     return 0, f"이미 있는 결정을 따른다 — {d['id']} [{d['status']}] {d['topic']} — {d['text']} (by {d['by']})"

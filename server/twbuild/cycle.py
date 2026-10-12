@@ -142,7 +142,12 @@ def n_plan(s):
                 raise contract.ContractError("openapi 본문이 아니다")
             util.write_text(contract.body_path(root), text)
             contract.write_generated(root)
-        except contract.ContractError as e:
+            cfg = config.load(root)
+            gen.write(root, cfg)                         # 계약 → 클라이언트 생성물도 같이 (워크트리는 main 에서 자른다)
+            pkg = cfg["app"]["id"].replace(".", "/")
+            git.commit_paths(root, f"contract({feature}): openapi · generated", "api", "apps/ios/App/Core/Networking",
+                             f"apps/android/app/src/main/kotlin/{pkg}/core/networking", "apps/android/app/src/test")
+        except (contract.ContractError, gen.GenError) as e:
             return {"phase": "plan", "log": [f"plan:contract-error:{e}"]}
     plans = payload.get("plans") if isinstance(payload.get("plans"), dict) else {}
     for sid in order:
@@ -154,9 +159,10 @@ def n_plan(s):
         except design.DesignError:
             pass
     data = [str(x) for x in (payload.get("data") or []) if str(x).strip()]
+    prev = (yaml_lite.loads(util.read_text(os.path.join(root, PLANS, feature, "_data.yaml"), "")) or {}).get("entities") or []
     ds_first = bool(design.catalog(root)) and not (design.index(root).get("ds") or {}).get("built")       # 디자인 시스템 과제 → 데이터 과제 → 화면 (4장 build)
     tasks = ([{"kind": "ds", "id": "ds"}] if ds_first else []) + ([{"kind": "data", "id": "data"}] if data else []) + [{"kind": "screen", "id": sid} for sid in order]
-    util.write_text(os.path.join(root, PLANS, feature, "_data.yaml"), yaml_lite.dumps({"entities": data}))
+    util.write_text(os.path.join(root, PLANS, feature, "_data.yaml"), yaml_lite.dumps({"entities": sorted(set(prev) | set(data))}))   # 이전 사이클의 엔티티를 지우지 않는다
     return {"phase": "build", "screens": order, "order": tasks, "cursor": 0, "log": [f"plan:{len(order)} screens, data {data}"]}
 
 
@@ -262,6 +268,11 @@ def n_prepare(s):
     prepared = {}
     for p in cfg.get("platforms") or []:
         wt, created = git.ensure_worktree(root, worktree_name(p, task["id"]))
+        if gen.drift(wt, cfg):                           # 계약 생성물이 브랜치에 없거나 낡았다(브랜치를 자른 뒤 계약이 바뀜) — 결정적이라 다시 쓰고 커밋한다
+            gen.write(wt, cfg)
+            git.commit_all(wt, "generated(contract): models · client from api/openapi.yaml")
+        if p == "android":
+            gate.ensure_android_props(wt)                # local.properties(gitignore) — 개발자 빌드가 바로 되게
         drafted = []
         if task["kind"] == "screen" and task["id"] in lays:
             drafted = _draft_into(root, wt, lays[task["id"]], feature, p, vars_)
@@ -289,6 +300,12 @@ def _rework_text(s, task_id):
         b = r.get("build") or {}
         if b.get("status") == "fail":
             out.append(f"- [{p}] build failed: {b.get('detail')}\n```\n{b.get('tail', '')}\n```")
+        for layer, label in (("contract_decode", "contract decoding failed (generated models vs api/openapi.yaml examples)"), ("device", "device smoke failed (app did not stay alive)")):
+            d = r.get(layer) or {}
+            if d.get("status") == "fail":
+                lg = d.get("log") or ""
+                tail = gate.tail(lg) if isinstance(lg, str) and os.path.isfile(lg) else str(lg)[-1500:]
+                out.append(f"- [{p}] {label}: {d.get('detail')}\n```\n{tail}\n```")
         for v in (r.get("parity") or {}).get("violations") or []:
             line = f"- [both] {v['rule']}: {v['detail']}"
             if line not in out:                 # 패리티는 양쪽 결과에 같은 내용이 실린다 — 한 번만
@@ -412,7 +429,7 @@ def n_smoke(s):
         if b.get("status") == "fail":
             b["tail"] = gate.tail(log)
         r["build"] = b
-        r["contract_decode"] = (gen.decode_check(wt, p, util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log")) if b.get("status") == "pass"
+        r["contract_decode"] = (gen.decode_check(wt, p, util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log"), cfg=cfg) if b.get("status") == "pass"
                                 else {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"})           # 계약 층(6장)
     ok = all(r["static"]["status"] != "fail" and r["build"]["status"] != "fail" and (r.get("parity") or {}).get("status") != "fail"
              and r["contract_decode"]["status"] != "fail" for r in res.values())

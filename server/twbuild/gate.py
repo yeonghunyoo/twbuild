@@ -192,6 +192,16 @@ def parity_check(ios_base, android_base, vars_):
     return {"status": "fail", "violations": [{"rule": "T5", "detail": f"routes differ — ios only: {sorted(a - b)}, android only: {sorted(b - a)}"}]}
 
 
+def ensure_android_props(base, t=None):
+    """apps/android/local.properties(gitignore) — SDK 경로. 워크트리마다 없으면 쓴다(개발자 · 게이트 빌드 공용)."""
+    from . import probe
+    t = t or probe.toolchain()
+    app = os.path.join(base, util.APPS["android"])
+    p = os.path.join(app, "local.properties")
+    if t.get("android_sdk") and os.path.isdir(app) and not os.path.isfile(p):
+        util.write_text(p, f"sdk.dir={t['android_sdk']}\n")
+
+
 def build(base, platform, vars_, log_path, timeout=1800):
     """워크트리의 앱을 빌드한다 — 걸린 시간 ms 를 함께 돌려준다(13장 층별 시간). 툴체인이 없으면 unmeasured."""
     t0 = time.time()
@@ -219,9 +229,7 @@ def _build(base, platform, vars_, log_path, timeout):
         if not os.path.isfile(gradlew):
             return {"status": "unmeasured", "detail": "gradlew 없음 — 셋업 selfcheck 가 만든다"}
         steps = [[gradlew, "assembleDebug", "-q"]]
-        sdk_props = os.path.join(app, "local.properties")
-        if not os.path.isfile(sdk_props):
-            util.write_text(sdk_props, f"sdk.dir={t['android_sdk']}\n")
+        ensure_android_props(base, t)
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, "w", encoding="utf-8") as lf:
         for cmd in steps:

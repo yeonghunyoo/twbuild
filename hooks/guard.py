@@ -28,6 +28,7 @@ SENSITIVE = (".env", ".env.*", "*.env", "*.pem", "*.key", "*.p8", "*.p12", "*.pf
              "*.tfstate", "*.tfvars", "*credentials*.json", "*service-account*.json", "google-services.json", "GoogleService-Info.plist",
              "id_rsa", "id_ed25519", "id_ecdsa", "*.mobileprovision", "secrets.yaml", "secrets.yml", "secrets.json",
              ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".htpasswd", "*.secret", "*.gpg", "*.asc", "*.ovpn", "*.kdbx")
+BARE_SENSITIVE = {g for g in SENSITIVE if "*" not in g and "/" not in g}      # id_rsa 같은 와일드카드 없는 이름은 맨 단어로도 본다
 SENSITIVE_DIR = re.compile(r"(^|/)(\.ssh|\.aws|\.kube|\.gnupg|\.docker|\.azure|\.config/gcloud)(/|$)")
 EXAMPLE = re.compile(r"\.(example|sample|template|dist)$", re.I)
 HOME_VAR = re.compile(r"\$\{?HOME\}?")
@@ -85,8 +86,9 @@ def is_sensitive(rel):
 
 def tmp_ok(ap):
     """시스템 임시 디렉터리 · 플러그인 데이터 디렉터리는 레포 밖이라도 쓸 수 있다."""
-    allowed = [tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/folders",
+    allowed = [tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/folders", "/dev",
                os.path.join(os.path.expanduser("~"), ".claude", "plugins", "data"),
+               os.path.join(os.path.expanduser("~"), ".claude", "projects"),          # Claude 의 세션 메모리 — lead 가 쓴다
                os.environ.get("TMPDIR") or "", os.environ.get("TWBUILD_DATA") or ""]
     return any(a and ap.startswith(os.path.normpath(a)) for a in allowed)
 
@@ -102,8 +104,8 @@ def rel_of(root, path, cwd):
         return None
     if rel.startswith(".."):
         return None
-    m = re.match(rf"{re.escape(TW)}/worktrees/[^/]+/(.*)$", rel)
-    return m.group(1) if m else rel
+    m = re.match(rf"{re.escape(TW)}/worktrees/[^/]+(?:/(.*))?$", rel)       # 워크트리 루트 자체(cd <wt>)도 워크트리 안이다
+    return (m.group(1) or "") if m else rel
 
 
 def protected(rel):
@@ -112,7 +114,12 @@ def protected(rel):
     return any(rel == p.rstrip("/") or rel.startswith(p) for p in PROTECTED) or bool(GENERATED_RE.search(rel))
 
 
+QUOTED_TEXT = re.compile(r"\"[^\"\n]*\s[^\"\n]*\"|'[^'\n]*\s[^'\n]*'")     # 공백이 든 따옴표 문자열 = 자연어(결정 본문 · 커밋 메시지) — 경로 · 명령으로 보지 않는다
+PATHLIKE = re.compile(r"[/.~$]")
+
+
 def check_bash(cmd, root, cwd):
+    cmd = QUOTED_TEXT.sub('""', cmd)
     if PUSH.search(cmd):
         deny(GUIDE["H1"])
     if REWRITE.search(cmd):
@@ -121,7 +128,7 @@ def check_bash(cmd, root, cwd):
         deny(GUIDE["H6"])
     if ENV_DUMP.search(cmd):
         deny(GUIDE["H5"])
-    tokens = re.findall(r"[\w./~${}:+-]+", cmd)
+    tokens = [t for t in re.findall(r"[\w./~${}:+-]+", cmd) if PATHLIKE.search(t) or t in BARE_SENSITIVE]   # 맨 단어(key · token)는 파일이 아니다
     for tk in tokens:
         ap = os.path.normpath(expand(tk)) if tk.startswith(("/", "~", "$")) else None
         if ap and os.path.isabs(ap) and (SENSITIVE_DIR.search(ap) or is_sensitive(ap)):
