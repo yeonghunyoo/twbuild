@@ -21,9 +21,11 @@ What the developers know is exactly what the gate measures. A failure or rejecti
 Also binding: the structure (nesting · order · containers) is the tree's; UiState field names, Action names and data object names/methods are the
 same on both platforms (the generator names them; keep them).
 
-## Builds
+## Builds · device · commits
 - Build layer: the app compiles (`xcodebuild` / `gradlew assembleDebug`) — measured again by the gate, not taken from your report.
-- Device layer and contract decoding are measured by the harness when enabled; "unmeasured" never counts as pass.
+- Device layer (config `smoke.device`, default `merge` = once, right before the merge): the gate installs the built app on a booted simulator / connected device, launches it and checks it is still alive after 5 s. A crash fails the smoke (log tail comes back in the rework task). No device → "unmeasured": never pass, never fail.
+- Contract decoding is measured by the harness when enabled; "unmeasured" never counts as pass.
+- S1 commits: a pre-commit hook scans staged files for secrets and sensitive files (`.env*`, keys, certificates) and rejects the commit with the rule name. The merge re-scans every file your branch changed; a hit blocks the merge until a human removes it. Values go to `.env.local`, examples to `.example` files. A false positive: `git commit --no-verify` and say so in your task note.
 
 ## Hooks (yolo mode safety)
 | ID | Blocked |

@@ -22,6 +22,7 @@ import tempfile
 TW = ".twbuild"
 FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "Grep", "Glob"}
 PROTECTED =("design/", "api/generated/", "api/fragments/", ".git/")
+GENERATED_RE = re.compile(r"(^|/)(Networking/Generated|networking/generated)/")     # 계약에서 생성한 클라이언트 · 모델 (gen.py)
 TW_WRITABLE = (TW + "/tasks/",)
 SENSITIVE = (".env", ".env.*", "*.env", "*.pem", "*.key", "*.p8", "*.p12", "*.pfx", "*.keystore", "*.jks",
              "*.tfstate", "*.tfvars", "*credentials*.json", "*service-account*.json", "google-services.json", "GoogleService-Info.plist",
@@ -47,7 +48,7 @@ GUIDE = {
     "H1": "[H1] 원격 push 는 하네스가 하지 않는다 — 머지는 로컬 main 까지다. 사람이 직접 push 한다.",
     "H2": "[H2] git 이력 재작성(reset --hard · rebase · amend · filter)은 금지다 — 되돌리기는 보고서의 revert 명령으로.",
     "H3": "[H3] 레포 밖에는 쓰지 않는다 — 임시 파일은 .twbuild/tmp/ 나 시스템 임시 디렉터리에.",
-    "H4": "[H4] 보호 구역이다 — design/ · api/generated/ · api/fragments/ · .twbuild/ 는 하네스가 쓴다. 바꾸려면 design run · plan · 설정으로.",
+    "H4": "[H4] 보호 구역이다 — design/ · api/generated/ · api/fragments/ · .twbuild/ · Networking/Generated 는 하네스가 쓴다. 바꾸려면 design run · plan · 설정 · 계약(openapi.yaml)으로.",
     "H5": "[H5] 민감 파일 · 환경 변수 전체는 읽지도 쓰지도 않는다 — 값이 필요하면 이름만 printenv NAME, 있는지만 [ -n \"$NAME\" ].",
     "H6": "[H6] 설치 · 권한 상승은 사람이 한다 — report 의 사람 할 일 명령을 안내하고 placeholder 로 진행한다.",
     "H7": "[H7] Claude Design 은 읽기 전용이다 — 디자인 수정은 사용자가 Claude Design 에서 한다.",
@@ -108,7 +109,7 @@ def rel_of(root, path, cwd):
 def protected(rel):
     if rel == TW or rel.startswith(TW + "/"):
         return not any(rel.startswith(w) for w in TW_WRITABLE)
-    return any(rel == p.rstrip("/") or rel.startswith(p) for p in PROTECTED)
+    return any(rel == p.rstrip("/") or rel.startswith(p) for p in PROTECTED) or bool(GENERATED_RE.search(rel))
 
 
 def check_bash(cmd, root, cwd):

@@ -16,7 +16,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, draft, gate, git, leaks, metrics, setup, tokens, tree, util, yaml_lite
+from . import config, contract, decide, design, device, draft, gate, gen, git, leaks, metrics, setup, tokens, tree, util, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -345,8 +345,8 @@ def n_smoke(s):
         if b.get("status") == "fail":
             b["tail"] = gate.tail(log)
         r["build"] = b
-        r["device"] = {"status": "unmeasured", "detail": "기기 실행 스모크는 다음 단계"}
-        r["contract_decode"] = {"status": "unmeasured"}
+        r["contract_decode"] = (gen.decode_check(wt, p, util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log")) if b.get("status") == "pass"
+                                else {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"})           # 계약 층(6장)
         res[p] = r
     if len(wts) == 2:
         par = gate.parity_check(wts.get("ios", root), wts.get("android", root), vars_)
@@ -355,7 +355,21 @@ def n_smoke(s):
             par = {"status": "fail", "violations": par["violations"] + dp["violations"]}
         for p in res:
             res[p]["parity"] = par
-    ok = all(r["static"]["status"] != "fail" and r["build"]["status"] != "fail" and (r.get("parity") or {}).get("status") != "fail" for r in res.values())
+    ok = all(r["static"]["status"] != "fail" and r["build"]["status"] != "fail" and (r.get("parity") or {}).get("status") != "fail"
+             and r["contract_decode"]["status"] != "fail" for r in res.values())
+    # 기기 층(6장): 설정 smoke.device — every 는 매번, merge 는 다른 층을 다 통과한 시도(= 머지 직전)에만, off 는 안 잰다. 못 잼은 머지를 막지 않고 보고서에 남는다. fail 은 막는다.
+    policy = (cfg.get("smoke") or {}).get("device", "merge")
+    for p, r in res.items():
+        if policy == "off":
+            r["device"] = {"status": "unmeasured", "detail": "설정 smoke.device: off"}
+        elif r["build"]["status"] != "pass":
+            r["device"] = {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"}
+        elif policy == "every" or ok:
+            d = device.run(wts[p], p, vars_, util.tw(root, util.LOGS_DIR, f"device-{feature}-{task['id']}-{p}.log"))
+            r["device"] = {**d, "detail": leaks.mask_all(d.get("detail") or ""), "log": leaks.mask_all(d.get("log") or "")}
+        else:
+            r["device"] = {"status": "unmeasured", "detail": "다른 층이 실패한 시도 — 머지 직전에만 잰다(smoke.device: merge)"}
+    ok = ok and all(r["device"]["status"] != "fail" for r in res.values())
     util.write_json(os.path.join(root, RESULTS, feature, f"{task['id']}.json"), {"t": util.now(), "attempt": (s.get("attempts") or {}).get(task["id"]), "pass": ok, "results": res})
     results = {**(s.get("results") or {}), task["id"]: res}
     if ok:

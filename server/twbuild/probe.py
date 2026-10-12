@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from . import config, contract, git, tokens, util
+from . import config, contract, gen, git, tokens, util
 
 PY_MIN = (3, 10)
 JDK_MIN = 17
@@ -129,7 +129,7 @@ def checks(root, cfg=None, t=None):
                           "", f"{p} 전체", 2))
     try:
         drift = contract.drift(root) if os.path.isfile(os.path.join(root, util.API_DIR, util.API_FILE)) else ["(계약 없음)"]
-        drift += tokens.drift(root, cfg)
+        drift += tokens.drift(root, cfg) + gen.drift(root, cfg)
         out.append(_check("contract", "계약 · 토큰 → 생성물 재생성 일치", not drift, ", ".join(drift) if drift else "", "", "계약 · 클라이언트 · 토큰", 2))
     except contract.ContractError as e:
         out.append(_check("contract", "계약 · 토큰 → 생성물 재생성 일치", False, str(e), "api/openapi.yaml · fragments 충돌을 고친다", "계약 · 클라이언트 · 토큰", 2))
@@ -144,6 +144,16 @@ def checks(root, cfg=None, t=None):
     hook = git.hook_installed(root, "pre-commit", git.PRECOMMIT_MARK) if git.is_repo(root) else None
     out.append(_check("precommit", "pre-commit 시크릿 검사 훅", hook, "" if hook else "없음 — 다음 /twbuild(prepare) 가 설치한다. 다른 pre-commit 훅이 있으면 그대로 두고 설치하지 않는다",
                       "", "커밋 전 시크릿 검사", 1))
+    from . import device, skills                     # 늦은 import — device 는 probe.toolchain 을 쓴다
+    av = device.available(t)
+    dev_ok = None if any(av.get(p) is None for p in plats) else all(av.get(p) for p in plats)
+    out.append(_check("device", "기기 (시뮬레이터 · adb 기기)", dev_ok,
+                      " · ".join(f"{p}: {'있음' if av.get(p) else ('없음' if av.get(p) is False else '못 잼')}" for p in plats),
+                      "" if dev_ok else "iOS: Xcode 의 시뮬레이터 · Android: `emulator -avd <이름>` 을 켜 둔다", "기기 스모크 층(없으면 못 잼)", 1))
+    rows = skills.status(root, cfg)
+    want = [r for r in rows if r.get("source") and not r.get("human")]
+    out.append(_check("skills", "공개 스킬 설치(.claude/skills)", (all(r["installed"] for r in want) if want else None), skills.summary(rows),
+                      "twbuild skills install" if want and not all(r["installed"] for r in want) else "", "개발자 스킬(필요할 때 호출)", 1))
     trust = _trusted(root)
     out.append(_check("trust", "워크스페이스 신뢰(allow 목록 적용)", trust,
                       "" if trust else ("~/.claude.json 에 기록 없음 — 헤드리스(claude -p) 세션은 이 레포의 allow 목록을 무시한다" if trust is False else "~/.claude.json 못 읽음"),

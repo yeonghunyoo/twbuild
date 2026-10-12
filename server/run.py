@@ -118,7 +118,7 @@ def _design(a, root):
 def main():
     ap = argparse.ArgumentParser(description="twbuild MCP 서버 · CLI")
     ap.add_argument("cmd", nargs="?", default="serve",
-                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan"])
+                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--root", default=None)
     ap.add_argument("--scope", default=None, help="design start: 기능 이름")
@@ -132,6 +132,7 @@ def main():
     ap.add_argument("--spec", default=None, help="design finish/trial: 화면 spec JSON 파일")
     ap.add_argument("--by", default=None, help="decide: ios | android | lead")
     ap.add_argument("--staged", action="store_true", help="scan: 스테이지된 파일만 (pre-commit 훅)")
+    ap.add_argument("--port", type=int, default=8787, help="mock: 포트")
     ap.add_argument("--compare", action="store_true", help="stats: 기능별 비교 표")
     ap.add_argument("--feature", default=None, help="stats: 기능 하나의 요약")
     a = ap.parse_args()
@@ -194,6 +195,20 @@ def main():
         return 0
     if a.cmd == "design":
         return _design(a, root)
+    if a.cmd == "gen":
+        from twbuild import gen
+        files = gen.write(root)
+        print("계약 코드 생성: " + (", ".join(files) if files else "api/openapi.yaml 이 없다"))
+        return 0
+    if a.cmd == "mock":
+        from twbuild import mock
+        mock.serve(root, a.port)
+        return 0
+    if a.cmd in ("device", "skills"):
+        from twbuild import device, skills
+        code, msg = (device if a.cmd == "device" else skills).cli(list(a.args), root)
+        print(msg)
+        return code
     bootstrap_venv()
     from twbuild import router
     if a.cmd == "status":

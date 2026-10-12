@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(PLUGIN, "server"))
 os.environ["TWBUILD_NO_BUILD"] = "1"          # selfcheck 의 실제 빌드는 끈다 (느리고 툴체인에 매인다)
+os.environ["TWBUILD_OFFLINE"] = "1"           # wire 의 공개 스킬 설치(네트워크)는 끈다 — skills 는 cases_skills 가 가짜 tarball 로 본다
 
 from twbuild import config, contract, design, git, leaks, metrics, probe, router, setup, tokens, tree, util, yaml_lite  # noqa: E402
 
@@ -480,6 +481,9 @@ def cycle_graph_end_to_end():
         check("ledger(mini/home)" in _git(root, "log", "--oneline", "--", "design/index.json", ".claude/rules/team", "features/mini"), log)
         # 기능 측정 요약 · 설정 잠금도 커밋된다 (13장 · 설정) — 잠긴 값을 바꾸면 config 검사가 잡는다
         check(os.path.isfile(util.tw(root, "metrics", "cycles", "mini.json")) and os.path.isfile(util.tw(root, "lock.json")), "요약 · 잠금 파일")
+        check(os.path.isfile(os.path.join(root, "apps/ios/App/Core/Networking/Generated/Models.swift")), "계약 → 클라이언트 생성물")
+        res_home = util.read_json(os.path.join(root, ".twbuild/results/mini/home.json"))["results"]
+        check(all(r["contract_decode"]["status"] == "unmeasured" and r["device"]["status"] == "unmeasured" for r in res_home.values()), res_home)
         check("mini.json" in _git(root, "log", "--name-only", "--", ".twbuild/metrics/cycles") and "lock.json" in _git(root, "log", "--name-only", "--", ".twbuild/lock.json"), "요약 · 잠금 커밋")
         summ = util.read_json(util.tw(root, "metrics", "cycles", "mini.json"))
         check(summ["feature"] == "mini" and summ["tree_nodes"] > 0 and "home" in summ["tasks"] and "data" in summ["tasks"], summ)

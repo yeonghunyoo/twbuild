@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 
-from . import config, contract, git, probe, util
+from . import config, contract, gen, git, probe, util
 
 SCAFFOLD_LOG = "scaffold.json"
 GITIGNORE_MARK = "# twbuild ("
@@ -56,6 +56,13 @@ def wire(root, pr):
         done.append(".claude/settings.json")
     if install_precommit(root):
         done.append("pre-commit")
+    if not os.environ.get("TWBUILD_OFFLINE"):            # 설정의 공개 스킬을 커밋 고정으로 .claude/skills/ 에 (7장 ②). 테스트 · 오프라인은 건너뛴다
+        from . import skills
+        got = skills.install(root, config.load(root))
+        if got.get("installed"):
+            done.append(f"skills:{len(got['installed'])}")
+        if got.get("errors"):
+            done.append(f"skills 실패:{len(got['errors'])}")
     return done
 
 
@@ -218,6 +225,7 @@ def scaffold(root, answers=None):
         text = _filter_auth(text, providers) if rel.startswith("auth") else text
         _emit(root, os.path.join(util.FRAGMENTS_DIR, rel), util.render(text, vars_), log, out)
     out["generated"] = contract.write_generated(root)
+    out["client"] = gen.write(root, cfg)                 # 계약 → Swift · Kotlin 모델 · 클라이언트 (생성물, 1장)
     # placeholders → .env.example · SETUP.md (사람용 문서는 손으로 쓰지 않는다)
     ph = util.read_json(os.path.join(util.TEMPLATES, "placeholders.json"), {}) or {}
     rows = [r for r in ph.get("placeholders", []) if _placeholder_applies(r, cfg)]
@@ -322,14 +330,15 @@ def selfcheck(root):
     layers = {}
     problems = config.problems(cfg)
     try:
-        drift = contract.drift(root)
-    except contract.ContractError as e:
+        drift = contract.drift(root) + gen.drift(root, cfg)
+    except (contract.ContractError, gen.GenError) as e:
         drift = [str(e)]
     missing = [p for p in cfg.get("platforms") or [] if not os.path.isdir(util.app_dir(root, p))]
     static_ok = not problems and not drift and not missing
     layers["static"] = {"status": "pass" if static_ok else "fail",
                         "detail": "; ".join(problems + [f"생성물 불일치: {d}" for d in drift] + [f"골격 없음: {p}" for p in missing])}
-    layers["contract_decode"] = {"status": "unmeasured", "detail": "생성 모델 디코딩 검사는 게이트 단계에서 붙는다"}
+    for p in cfg.get("platforms") or []:                 # 계약 층(6장): 응답 예시 전부를 생성 모델로 디코딩 — swiftc · gradle 단위 테스트
+        layers[f"decode_{p}"] = gen.decode_check(root, p, util.tw(root, util.LOGS_DIR, f"selfcheck-decode-{p}.log"))
     for p in cfg.get("platforms") or []:
         key = f"build_{p}"
         if not cfg.get("setup", {}).get("build", True) or os.environ.get("TWBUILD_NO_BUILD"):
@@ -434,6 +443,10 @@ def report(root, pr, sc, scaffold_out=None):
         lines += ["", "### 사람 할 일 (막는 범위 큰 순)", "", "| 할 일 | 막는 범위 | 명령 |", "|---|---|---|"]
         for r in todos:
             lines.append(f"| {r['what']} | {r['blocks']} | `{r['fix']}` |")
+    from . import skills
+    human = skills.human_todos(config.load(root))
+    if human:
+        lines += ["", "### 공개 스킬 — 라이선스상 사람이 설치 (PolyForm)", ""] + [f"- {h}" for h in human]
     if scaffold_out:
         kept = scaffold_out.get("kept") or []
         if kept:

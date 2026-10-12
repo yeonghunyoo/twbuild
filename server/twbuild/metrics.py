@@ -127,7 +127,12 @@ def _fmt_ms(ms):
 
 
 def _row():
-    return {"attempts": 0, "static_fail": 0, "build_fail": 0, "build_ms": 0.0, "violations": [], "passed": False, "first_try": None, "ms": 0.0, "tokens": 0, "agents": 0}
+    return {"attempts": 0, "static_fail": 0, "build_fail": 0, "build_ms": 0.0, "device": None, "device_ms": 0.0, "violations": [], "passed": False, "first_try": None,
+            "ms": 0.0, "tokens": 0, "agents": 0}
+
+
+def _mark(status):
+    return {"pass": "✅", "fail": "❌", None: "-"}.get(status, "못 잼")
 
 
 def screen_rows(root, feature=None):
@@ -142,6 +147,8 @@ def screen_rows(root, feature=None):
             r["static_fail"] += 1 if e.get("static") == "fail" else 0
             r["build_fail"] += 1 if e.get("build") == "fail" else 0
             r["build_ms"] += e.get("build_ms") or 0
+            r["device"] = e.get("device") or r["device"]              # 마지막 기기 층 결과 (pass · fail · unmeasured)
+            r["device_ms"] += e.get("device_ms") or 0
             r["violations"] += e.get("violations") or []
             r["passed"] = r["passed"] or bool(e.get("passed"))
             if r["first_try"] is None:
@@ -161,10 +168,10 @@ def screens_table(root):
     if not rows:
         return ""
     lines = ["", "화면 · 플랫폼 (smoke · 개발자 과제)",
-             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
+             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'기기':>5}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
     for (task, plat), r in sorted(rows.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
         viol = ",".join(sorted(set(r["violations"]))) or "-"
-        lines.append(f"  {str(task):<12}{str(plat):<9}{r['attempts']:>4}{r['static_fail']:>8}{r['build_fail']:>8}{_fmt_ms(r['build_ms'] or None):>9}{'✅' if r['passed'] else '—':>5}"
+        lines.append(f"  {str(task):<12}{str(plat):<9}{r['attempts']:>4}{r['static_fail']:>8}{r['build_fail']:>8}{_fmt_ms(r['build_ms'] or None):>9}{_mark(r['device']):>5}{'✅' if r['passed'] else '—':>5}"
                      f"{_fmt_ms(r['ms'] if r['agents'] else None):>10}{(r['tokens'] or '-'):>9}  {viol}")
     return "\n".join(lines)
 
@@ -201,7 +208,7 @@ def feature_summary(root, feature):
         t["attempts"] = max(t["attempts"], r["attempts"])
         t["first_try"] = t["first_try"] and bool(r["first_try"])
         t["passed"] = t["passed"] and r["passed"]
-        t["platforms"][plat] = {k: r[k] for k in ("attempts", "static_fail", "build_fail", "build_ms", "ms", "tokens", "agents")}
+        t["platforms"][plat] = {k: r[k] for k in ("attempts", "static_fail", "build_fail", "build_ms", "device", "device_ms", "ms", "tokens", "agents")}
         t["platforms"][plat]["violations"] = sorted(set(r["violations"]))
     nodes = {}
     for e in events(root):
@@ -282,10 +289,10 @@ def feature_table(root, feature):
     d = s.get("decisions") or {}
     lines = [f"{feature} — 화면 {len(s.get('screens') or [])}개 · 트리 노드 {s.get('tree_nodes')}개 · 첫 시도 통과 {_rate(s.get('first_try_pass_rate'))} · "
              f"결정 {d.get('total', 0)}(확정 {d.get('confirmed', 0)} · 잠정 {d.get('tentative', 0)}) · {s.get('ver', {}).get('plugin', '?')}@{s.get('ver', {}).get('commit', '?')}",
-             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'개발자 시간':>10}{'토큰':>9}  위반"]
+             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'기기':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
     for tid, t in sorted((s.get("tasks") or {}).items()):
         for plat, p in sorted(t["platforms"].items()):
-            lines.append(f"  {tid:<12}{plat:<9}{p['attempts']:>4}{p['static_fail']:>8}{p['build_fail']:>8}{_fmt_ms(p['build_ms'] or None):>9}"
+            lines.append(f"  {tid:<12}{plat:<9}{p['attempts']:>4}{p['static_fail']:>8}{p['build_fail']:>8}{_fmt_ms(p['build_ms'] or None):>9}{_mark(p.get('device')):>5}"
                          f"{_fmt_ms(p['ms'] if p['agents'] else None):>10}{(p['tokens'] or '-'):>9}  {','.join(p.get('violations') or []) or '-'}")
     u = s.get("unmeasured") or {}
     lines.append(f"  못 잼: 개발자 과제 {u.get('agents', 0)} · 빌드 {u.get('builds', 0)}")

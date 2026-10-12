@@ -200,6 +200,7 @@ def _node_metrics(root, which, name, step, result, feature=None):
                     continue
                 metrics.record(root, "smoke", key=f"smoke:{tid}:{plat}:{step}", task=tid, platform=plat, step=step, feature=feature,
                                static=(r.get("static") or {}).get("status"), build=(r.get("build") or {}).get("status"), build_ms=(r.get("build") or {}).get("ms"),
+                               device=(r.get("device") or {}).get("status"), device_ms=(r.get("device") or {}).get("ms"), decode=(r.get("contract_decode") or {}).get("status"),
                                violations=[v["rule"] for v in (r.get("static") or {}).get("violations") or []], passed=result.get("phase") == "merge")
     elif name == "merge" and result.get("phase") in ("build", "done"):
         metrics.record(root, "merged", key=f"merged:{step}", step=step, cursor=result.get("cursor"), feature=feature)
