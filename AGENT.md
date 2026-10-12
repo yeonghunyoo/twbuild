@@ -25,7 +25,7 @@
 | 디자인 | `design/` | 하네스가 수집. 손으로 고치지 않는다. 디자인의 좋고 나쁨은 사용자가 정한다 |
 | 구조 | `design/<기능>/layout/<화면>.json` (생성물) | 두 플랫폼이 1:1 로 따른다. 합치기 · 빼기 · 순서 변경 · 컨테이너 추가 금지 |
 | 토큰 | `design/ds/styles.css` → Swift · Kotlin 토큰 코드 (생성물) | 손으로 고치지 않는다 |
-| API | `api/openapi.yaml` → 클라이언트 · 모델 · mock (생성물) | 손으로 고치지 않는다 |
+| API | `api/openapi.yaml` + `api/fragments/` → `Core/Networking/Generated/{Models,Client}`(Swift · Kotlin) · mock (생성물, `gen.py` · `mock.py`, 결정적 · drift 검사). 표준 타입과 겹치는 스키마 이름은 `Model` 접미사(Error → ErrorModel), 두 플랫폼 같은 이름 | 손으로 고치지 않는다 (훅 H4) |
 | 해석 | 정본이 아니라 참고 자료 | 노드 단위 = `twbuild decide`(주제 = 노드 ID). 일반 번역 규칙 = `<플랫폼>-translate` |
 
 ```
@@ -117,10 +117,10 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | 노드 | 주체 | 하는 일 |
 |---|---|---|
 | probe | 결정적 | git · 기존 앱 · config · 툴체인 · 커넥터 실측 → 빈 칸 목록. `twbuild doctor` 와 같은 함수 — 사전 점검(빠진 것마다 설치 명령). 툴체인이 없는 플랫폼은 끈다 |
-| wire | 결정적 · 멱등 | config 기본값 · 권한 기본값(욜로, 11장) · `.gitignore` · CLAUDE.md 마커 절 · `.claude/rules/` 골격 · 설정의 스킬 설치 |
+| wire | 결정적 · 멱등 | config 기본값 · 권한 기본값(욜로, 11장) · `.gitignore`(옛 블록은 갱신) · CLAUDE.md 마커 절 · `.claude/rules/` 골격 · pre-commit 시크릿 훅 · 설정의 공개 스킬 설치(7장) |
 | interview | lead | 셋만 묻는다: 앱 주제 · 앱 이름 · 요구사항 → `features/app.md`. 답마다 저장, 끊기면 남은 것부터. 식별자는 이름에서 만든다(`com.example.<이름>`). 나머지(플랫폼 · 신규/기존 · 로그인 · 스모크)는 probe · 기본값으로 정하고 report 표에 보인다 — 바꾸려면 config |
 | scaffold | 결정적 | 모노레포 골격 · 계약 본문 + 조각 · 코드 생성 · mock · 최소 토큰 · `placeholders.json` |
-| selfcheck · report | 결정적 | 빈 골격 스모크 · 사람 할 일 · ✅/❌ |
+| selfcheck · report | 결정적 | 빈 골격 스모크(정적 drift · 계약 디코딩 `decode_<플랫폼>` · 빌드) · 사람 할 일 · ✅/❌ |
 
 **사이클 그래프** (기능마다)
 
@@ -136,7 +136,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 - 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
   merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` 를 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다.
-  아직 없는 것: 디자인 시스템 부트스트랩 과제 · review · fix 분류(지금은 실패 전부 → 재작업) · retro · 기기 실행 · 계약 디코딩 층.
+  아직 없는 것: 디자인 시스템 부트스트랩 과제 · review · fix 분류(지금은 실패 전부 → 재작업) · retro.
 - 사람에게 묻는 것은 전부 ask(AskUserQuestion — 선택지 + 직접 입력, 추천을 맨 위에). 채팅 자유 질문은 쓰지 않는다.
 - 그래프가 과제마다 "호출할 스킬" 을 싣는다.
 - 노드는 부작용 뒤에 interrupt 하지 않는다(재개 시 노드가 처음부터 돈다). 저장 상태보다 실측이 이긴다.
@@ -153,7 +153,7 @@ interactions: [HOME-1: n.home.card 탭 → Screens.detail(id)]
 translations: [D-14]                       # 트리가 못 정한 번역 해석
 ```
 
-- 구현 중 해석은 개발자가 `twbuild decide <노드 ID> "<해석>" --by ios` 로 기록한다 → 메인 레포 `.claude/rules/team/` 에 D-xx(잠정). 상대 개발자에게는 훅이 주입한다. 같은 주제가 있으면 먼저 쓴 쪽이 이긴다. lead 가 확정하거나 뒤집는다.
+- 구현 중 해석은 개발자가 `twbuild decide <노드 ID> "<해석>" --by ios` 로 기록한다 → 메인 레포 `.claude/rules/team/` 에 D-xx(잠정). 상대 개발자에게는 훅이 주입한다(6 KB 상한 · 확정 먼저 · 본문 220자 — 실측: 15 KB 주입은 잘려 앞 2 KB 만 보였다; 전체는 `twbuild decide`). 같은 주제가 있으면 먼저 쓴 쪽이 이긴다. lead 가 확정하거나 뒤집는다.
 - 개발자가 정할 수 없는 것(계약 · 공용 컴포넌트 · 디자인 시스템 · 트리와 다른 구조)은 `blocked`. 디자인 자체가 바뀌어야 하면 사람 할 일.
 - 개발자끼리 직접 메시지를 주고받지 않는다. 같은 화면의 두 과제는 함께 띄우고 함께 닫는다.
 
@@ -161,9 +161,9 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 
 | 층 | 확인 | 기기 |
 |---|---|---|
-| 빌드 · 실행 | 두 앱이 빌드되고 크래시 없이 뜨는가 | 씀 (기본: 머지 직전 한 번) |
+| 빌드 · 실행 | 두 앱이 빌드되고 크래시 없이 뜨는가 — 기기 층(`device.py`): 부팅된 iPhone 시뮬레이터(없으면 가장 새 런타임을 부팅) · adb 기기에 설치 → 실행 → 5초 뒤 살아 있음 → 종료. 모든 명령에 시간 제한. 도구 · 기기 · 산출물이 없거나 시간이 넘으면 "못 잼"(머지를 막지 않고 보고서에 남는다 · fail 은 막는다) | 씀 (config `smoke.device`: merge = 다른 층을 다 통과한 시도에만 · every · off) |
 | 트리 정합성 (정적) | 트리의 노드 ID · `if` · `list` · `on_*` 가 양쪽 코드에 있음 · UiState 필드 · Action · Route · 데이터 객체 이름 · 메서드가 iOS = Android · Route 파라미터는 단순 값(ID) · 토큰과 값이 맞는 곳은 토큰 · 트리에 없는 직접값 없음 · 클래스 노드는 카탈로그 컴포넌트 · 리소스 양쪽 등록 | 안 씀 |
-| 계약 | openapi 응답 예시 전부를 Swift · Kotlin 생성 모델로 디코딩 | 안 씀 |
+| 계약 | openapi 응답 예시 전부(example · examples · 스키마 example · $ref 응답)를 생성 모델로 디코딩 — `gen.decode_check()`: iOS 는 swiftc 임시 실행 파일, Android 는 생성 JUnit 테스트 `ContractDecodeTest`(init 스크립트로 JUnit). 빌드 층 통과 뒤 매 스모크 · 셋업 selfcheck 에서도 | 안 씀 |
 
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
 - 규칙은 `harness-rules` 에 ID 로 두고, 거부 메시지가 같은 ID 를 인용한다.
@@ -183,6 +183,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 | ② 목록 — 필요할 때 호출 | 설정 `agents.<역할>.skills` | 언어 · OS(공개 스킬) · lead 의 `archify`(도식이 필요할 때만 — 과제가 권하지 않는다) |
 
 - ②는 과제 프롬프트가 호출을 권한다. 강제하지 않는다 — 반드시 필요하면 ①로 옮긴다.
+- ②의 설치(`skills.py`): wire 가 `SOURCES`(repo · path · 커밋 핀 · 라이선스) 의 tarball 을 캐시(`~/.claude/plugins/data/twbuild/skills-src/`)에 받아 대상 레포 `.claude/skills/<이름>/` 에 복사하고 `.claude/skills/_sources.json` 에 기록한다(커밋). 설정의 분류 이름(jetpack-compose · security · identity · navigation · play)은 `ALIASES` 가 개별 스킬로 푼다. PolyForm(dpearson2699/swift-ios-skills)은 설치하지 않고 사람 할 일로 낸다. `twbuild skills [install]`.
 - 서브에이전트는 메인 대화를 못 본다. 과제 프롬프트는 그래프가 빠짐없이 만든다.
 
 ## 8. 지시 우선순위
@@ -206,15 +207,16 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 | 오프라인 | 클라이언트 UUID `id` · `updatedAt` · `deletedAt` · `?since=` · `Idempotency-Key` | `Repository` + 로컬 DB + outbox |
 
 - 셋업은 `api/fragments/`(기본 조각)만, plan 은 `openapi.yaml` 본문만 고친다. 코드 생성이 합친다.
-- 앱은 mock 서버로 끝까지 가고, 실서버 전환은 `API_BASE_URL` 하나.
+- 앱은 mock 서버로 끝까지 가고, 실서버 전환은 `API_BASE_URL` 하나. mock 은 `twbuild mock [--port 8787]`(`mock.py`): 2xx 예시를 그대로, 보호 오퍼레이션에 Bearer 없으면 401(Unauthorized 예시), 본문은 검증하지 않는다. Android 에뮬레이터는 `http://10.0.2.2:8787`.
 
 ## 11. 사람 할 일 · 안전
 
 - 막지 않고 placeholder · mock 으로 진행하고 사람 할 일로 모은다. 정본은 `config/placeholders.json` → `.env.example` · `SETUP.md` 생성.
 - 값은 `.env.local`(gitignore). `twbuild init` 이 묻고, `twbuild doctor` 가 ✅/❌.
-- 시크릿 · 개인정보는 pre-commit · 머지에서 이력까지 검사, 채팅 출력은 마스킹.
+- 시크릿 · 개인정보는 pre-commit 훅(wire 가 `.git/hooks/pre-commit` 에 설치 — 워크트리 공용, `twbuild scan --staged`; 다른 훅이 있으면 두고 doctor 가 알린다) · 머지 전 브랜치가 바꾼 파일 전부 검사(걸리면 `blocked`, 사람이 지운다)로 막고, 채팅 출력은 마스킹. 계약 · 디자인 · 문서 경로와 `example` 이 있는 줄은 일반 규칙(assignment)을 안 본다(응답 예시). 값은 앞 3글자만 보인다.
 - 권한은 **욜로(bypass) 모드를 권한다** — 단, 프로젝트 설정(`.claude/settings*.json`)으로는 켤 수 없다(Claude Code 2.1.257+). 사용자 설정(`~/.claude/settings.json` permissions.defaultMode) 또는 `claude --permission-mode bypassPermissions` 로 켜고, 서브에이전트는 메인 세션 모드를 물려받는다. wire 는 프로젝트 settings 에 하네스 명령 허용 목록과 거부 목록만 더하고, doctor · report 가 켜는 법을 안내한다.
-  확인 창이 없으므로 위험 동작은 PreToolUse 훅(`hooks/guard.py`)이 **차단**한다(경보 아님, 거부 사유는 규칙 ID): H1 원격 push · H2 git 이력 재작성 · H3 레포 밖 쓰기 · H4 보호 구역(design/ · api/generated · api/fragments · .twbuild/) · H5 민감 파일 · 환경 변수 덤프 · H6 설치 · 권한 상승 · H7 Claude Design 쓰기.
+  확인 창이 없으므로 위험 동작은 PreToolUse 훅(`hooks/guard.py`)이 **차단**한다(경보 아님, 거부 사유는 규칙 ID): H1 원격 push · H2 git 이력 재작성 · H3 레포 밖 쓰기 · H4 보호 구역(design/ · api/generated · api/fragments · .twbuild/ · `Networking/Generated`) · H5 민감 파일 · 환경 변수 덤프 · H6 설치 · 권한 상승 · H7 Claude Design 쓰기.
+  doctor 는 그 외에 워크스페이스 신뢰(`~/.claude.json` — 헤드리스 세션은 미신뢰 레포의 allow 목록을 무시한다) · pre-commit 훅 · 기기 · 공개 스킬 설치를 보인다(막지는 않는다).
 
 ## 12. 언어
 
@@ -231,12 +233,12 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 | 개발자 과제 | `SubagentStart` → `SubagentStop` 훅 (`agent_id`) | 구현. 안의 빌드 · `check` 는 따로 |
 | 사람 대기 · 기기 대기 | `blocked` → 재개 · 기기 잠금 대기 | 성능에서 뺀다 |
 
-- 지표: 시간(위 구간 · 빌드 · 스모크 층별) · 화면별 시도 횟수 · 첫 시도 통과율 · 실패 층 · 규칙 ID별 위반 · `blocked` 사유 · decide 수 ·
+- 지표: 시간(위 구간 · 빌드 `build_ms` · 기기 `device_ms` — smoke 이벤트) · 화면별 시도 횟수 · 첫 시도 통과율 · 실패 층 · 규칙 ID별 위반 · `blocked` 사유 · decide 수 ·
   토큰(입력 · 출력 · 캐시 — `SubagentStop` 때 트랜스크립트 usage 합산) · 못 잼 수.
 - 비교: 트리 노드 수로 나눈 값(노드당 시간 · 토큰). 모든 기록에 플러그인 버전 · 커밋 · 모델 · 설정 해시를 붙인다.
 - 기록: `.twbuild/metrics/events.jsonl` (추가 전용, gitignore). 래퍼 · 훅 · CLI 만 쓴다 — **노드 안에서 쓰지 않는다**(재개 때 중복). 키 `(thread, 노드, 시도)` 는 한 번만.
-  merge 가 기능 요약 `.twbuild/metrics/cycles/<기능>.json` 을 커밋한다(마스킹 · 경로 없음).
-- LLM 자기신고는 쓰지 않는다. `twbuild stats` · `--feature <기능>` · `--compare` (사이클 · 플랫폼 · 버전). 못 잰 칸은 "못 잼".
+  merge 가 기능 요약 `.twbuild/metrics/cycles/<기능>.json`(화면 · 트리 노드 수 · 과제별 시도 · 첫 시도 통과율 · 빌드 · 개발자 시간 · 토큰 · 노드당 값 · 결정 수 · 못 잼 수)을 `ledger(…)` 커밋에 넣는다(마스킹 · 경로 없음; `.gitignore` 블록이 `.twbuild/metrics/cycles/` 와 `lock.json` 만 예외로 둔다).
+- LLM 자기신고는 쓰지 않는다. `twbuild stats`(노드 · 과제 · 화면별 표) · `--feature <기능>`(요약 표) · `--compare`(기능별 한 줄 — 노드당 정규화 · 플러그인 버전). 못 잰 칸은 "못 잼".
 - 외부 도구(OTel · LangSmith 등) · HTML 대시보드는 두지 않는다 — LLM 이 그래프 밖이라 트레이서엔 결정적 노드만 보이고, 외부 전송은 11장과 충돌한다.
 
 ## 14. 앱 구조 — MVVM + UDF (기본)
@@ -282,7 +284,7 @@ View ──Action──▶ ViewModel ──▶ 데이터 계층 { Repository · 
 
 ```yaml
 platforms: [ios, android]         # 첫 셋업은 툴체인 실측으로 정한다
-architecture: mvvm-udf            # 첫 머지 뒤 잠김
+architecture: mvvm-udf            # 첫 머지 뒤 잠김 — merge 가 .twbuild/lock.json(커밋)에 적고 doctor 의 config 검사가 바뀜을 막는다
 min_os: {ios: 17, android: 26}    # @Observable = iOS 17+. 첫 머지 뒤 잠김
 app: {name: "", product: "", id: ""}   # interview 가 채운다. product = ASCII PascalCase, id = com.example.<slug> (첫 머지 뒤 잠김)
 auth: {providers: [email, apple, google]}
@@ -307,15 +309,15 @@ agents:
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
 | `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 — 절차 · CSS→네이티브 번역표(두 플랫폼 같은 행 순서) · 빌드 환경 · 규칙 ID(T · H · D) |
 | `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만. `skills:` 로 코어 스킬 프리로드, `tools:` 에 claude-design · Agent 없음. 플러그인 에이전트 타입 `twbuild:ios-dev` |
-| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI) · `twbuild/`: util · yaml_lite · config · leaks · git · probe(doctor) · contract · setup · metrics · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T6 · 빌드) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T6 · 빌드) · device(기기 층) · skills(공개 스킬 설치) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
 | `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · `decisions.py`(SubagentStart 에 기능의 결정 전부 · PreToolUse 에 새 결정만, `agent_id` 기준 중복 제거) · `agent_metrics.py`(SubagentStart→Stop 시간 · 트랜스크립트 usage 합산). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
-| `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
-| `tests/` | `run.sh` → `cases.py` (임시 레포 · 픽스처 `fixtures/mini.dc.html`) — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run |
+| `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block` · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
+| `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py`, 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |
 
 ## handoff-agent 에서 가져올 것 (`../handoff-agent`, 이식 후 레포와 이 절 삭제)
 
-가져왔다: `leaks.py` · `git.py` · `util.py` 일부 · `api.py` YAML 파서(→ yaml_lite) · 라우트 · `derive.py` 레이아웃 트리(→ tree) · `hooks/guard.py` · `run.py` venv 부트스트랩 · `graph.py` task/submit 패턴 · 테스트 방식 · 멱등 마커 배선 · "남은 칸만 묻기".
-남은 것: `gen.py`(Swift · Kotlin 생성 — 계약 모델 · 클라이언트) · 빌더 CSS → SwiftUI/Compose 번역표(→ `<플랫폼>-translate`).
+가져왔다: `leaks.py` · `git.py` · `util.py` 일부 · `api.py` YAML 파서(→ yaml_lite) · 라우트 · `derive.py` 레이아웃 트리(→ tree) · `hooks/guard.py` · `run.py` venv 부트스트랩 · `graph.py` task/submit 패턴 · 테스트 방식 · 멱등 마커 배선 · "남은 칸만 묻기" · `gen.py`(→ gen: 계약 모델 · 클라이언트, MVVM 경로 · Sendable · kotlinx-serialization 으로 재설계).
+남은 것: 빌더 CSS → SwiftUI/Compose 번역표의 나머지 행(→ `<플랫폼>-translate`). 그 뒤 레포와 이 절을 지운다.
 
 ## 금지
 
@@ -334,7 +336,7 @@ agents:
 | 2 | 서브에이전트 안 훅 `additionalContext` | ✅ SubagentStart · PreToolUse · PostToolUse 모두. 입력에 `agent_id` · `agent_type` |
 | 3 | 워크트리에서 `.claude/rules` `paths:` | ✅ 그 워크트리의 rules 가 워크트리 기준으로 로드. 메인 레포 rule 은 안 붙음 → 결정은 훅 주입, rule 은 전부 경로 스코프 |
 | 4 | 화면 하나 한 사이클의 수렴 횟수 · 시간 | ✅ 2026-10-12 사운드스케이프 forest: 데이터 2회(T6 이름 패리티 재작업 1회) · onboarding 1회 · home 1회 모두 통과 · 머지. 개발자 과제(두 플랫폼 병렬) 평균 9m51s, 4회 39m25s. 정적 위반 0 · 빌드 실패 0. 에이전트 토큰은 훅 미설치 세션이라 못 잼 |
-| 5 | 기기 스모크를 머지 직전 한 번으로 감당 | 대기 |
+| 5 | 기기 스모크를 머지 직전 한 번으로 감당 | ✅ 2026-10-13 사운드스케이프 iOS: iPhone 17 Pro 시뮬레이터에 설치 · 실행 · 5초 생존 9.6s(첫 회는 부팅 포함 통과). Android 는 에뮬레이터 미기동으로 못 잼 → 사이클 실측은 아래 |
 | 6 | 디자인 import — 실제 프로젝트(사운드스케이프) 트리 · 토큰 | ✅ 화면 8개 · 생성 토큰으로 두 플랫폼 빌드 통과 (훅 경로는 플러그인 설치 세션에서 실측 필요) |
 
 2026-10-11 · Claude Code 2.1.296 · 카나리 토큰 + 서브에이전트 트랜스크립트로 판정. 디자인 커넥터 실측: 텍스트 11개 바이트 일치 · 검문 거부 동작 · PNG 거부 · standalone HTML 은 1 MB 한 줄이 256 KiB 상한에 잘림.
