@@ -109,10 +109,19 @@ def plan_material(root, feature, screens):
         mat["routes"] = [f"(contract error: {e})"]
     mat["brief"] = util.read_text(os.path.join(root, util.FEATURES_DIR, feature, "brief.md"), "")
     idx = design.index(root)
-    mat["catalog"] = [c["name"] for c in design.catalog(root)]                     # 디자인 시스템 컴포넌트 (첫 사이클의 ds 과제가 만든다)
+    mat["catalog"] = [c["name"] for c in used_catalog(root, feature)]              # 이 기능의 트리가 쓰는 카탈로그 컴포넌트 (ds 과제가 만든다)
+    mat["catalog_all"] = [c["name"] for c in design.catalog(root)]
     mat["ds_built"] = bool((idx.get("ds") or {}).get("built"))
     mat["decisions"] = [d for d in decide.ledger(root)["decisions"] if d["feature"] in (feature, "general") and d["status"] != "flipped"]
     return mat
+
+
+def used_catalog(root, feature):
+    """카탈로그 가운데 이 기능의 레이아웃 트리가 class 로 쓰는 컴포넌트만 — 안 쓰는 컴포넌트는 만들지 않는다 (실측: 사운드스케이프 화면은 class 를 안 쓴다 → ds 과제 없음)."""
+    used = set()
+    for lay in _layouts(root, feature).values():
+        used |= set(tree.status(lay).get("classes") or [])
+    return [c for c in design.catalog(root) if c.get("class") in used]
 
 
 def n_plan(s):
@@ -160,7 +169,7 @@ def n_plan(s):
             pass
     data = [str(x) for x in (payload.get("data") or []) if str(x).strip()]
     prev = (yaml_lite.loads(util.read_text(os.path.join(root, PLANS, feature, "_data.yaml"), "")) or {}).get("entities") or []
-    ds_first = bool(design.catalog(root)) and not (design.index(root).get("ds") or {}).get("built")       # 디자인 시스템 과제 → 데이터 과제 → 화면 (4장 build)
+    ds_first = bool(used_catalog(root, feature)) and not (design.index(root).get("ds") or {}).get("built")   # 디자인 시스템 과제(쓰는 컴포넌트가 있을 때) → 데이터 과제 → 화면 (4장 build)
     tasks = ([{"kind": "ds", "id": "ds"}] if ds_first else []) + ([{"kind": "data", "id": "data"}] if data else []) + [{"kind": "screen", "id": sid} for sid in order]
     util.write_text(os.path.join(root, PLANS, feature, "_data.yaml"), yaml_lite.dumps({"entities": sorted(set(prev) | set(data))}))   # 이전 사이클의 엔티티를 지우지 않는다
     return {"phase": "build", "screens": order, "order": tasks, "cursor": 0, "log": [f"plan:{len(order)} screens, data {data}"]}
@@ -232,7 +241,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
               "6. If a CSS → native translation is ambiguous for a node, record it: `twbuild decide <node id> \"<your interpretation>\" --by " + platform + "`. If a decision for that node already exists, follow it.",
               "7. If something outside your boundary must change (contract, shared component, design, a different structure), stop and report `blocked` with the exact reason."]
     elif task["kind"] == "ds":
-        cat = design.catalog(root)
+        cat = used_catalog(root, feature)
         L += ["- Design-system task: implement the catalog components as reusable views under `App/Core/DesignSystem/Catalog/<Name>.swift` (iOS) · `core/designsystem/catalog/<Name>.kt` (Android) — one file per component, the SAME names and parameter names on both platforms (gate T7 compares them):"]
         L += [f"  - `{c['name']}` ← class `.{c.get('class', '')}` in `{c['file']}`" + (f"; parts: {', '.join('.' + p for p in c['parts'])}" if c.get("parts") else "")
               + (f"; variants (modifier classes → parameters with defaults): {', '.join('.' + m for m in c['modifiers'])}" if c.get("modifiers") else "") for c in cat]
@@ -539,7 +548,7 @@ def n_merge(s):
         except design.DesignError:
             pass
     elif task["kind"] == "ds":
-        design.set_ds_built(root, {"hash": (idx.get("ds") or {}).get("hash"), "commits": commits, "components": sorted(design.catalog_names(root))})
+        design.set_ds_built(root, {"hash": (idx.get("ds") or {}).get("hash"), "commits": commits, "components": sorted(c["name"] for c in used_catalog(root, feature))})
     for p in cfg.get("platforms") or []:
         wt = util.tw(root, util.WORKTREES, worktree_name(p, task["id"]))
         notes = os.path.join(wt, TASKS)

@@ -476,7 +476,7 @@ def cycle_graph_end_to_end():
         check(p["task"] == "build" and p["job"]["id"] == "ds" and p["job"]["kind"] == "ds" and "Card" in p["prompts"]["ios"] and "Core/DesignSystem" in p["prompts"]["android"], out.get("message"))
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         p = out["pending"]
-        check("ds/mini/ds" in _git(root, "tag") and design.index(root)["ds"]["built"]["components"] == ["Btn", "Card", "Tag"], design.index(root)["ds"])
+        check("ds/mini/ds" in _git(root, "tag") and design.index(root)["ds"]["built"]["components"] == ["Card"], design.index(root)["ds"])   # 트리가 쓰는 card 만
         # 카탈로그가 구현됐다고 치고(main 에 커밋) — 이후 화면 초안은 class 노드를 Card 로 감싼다 (T8)
         pkg = config.app_vars(config.load(root))["id"].replace(".", "/")
         util.write_text(os.path.join(root, "apps/ios/App/Core/DesignSystem/Catalog/Card.swift"),
