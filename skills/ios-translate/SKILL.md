@@ -45,6 +45,27 @@ Never invent a color or size that is not in the tree. When a row says "decide", 
 | `z-index` | order inside `ZStack` (later = on top) |
 | `transform: translateY(100%)` (sheet) | `.offset(y:)` with animation, or `.sheet`/`presentationDetents` — decide per overlay |
 | `display: none` driven by state | `if` in the tree already — do not add extra conditions |
+| `flex-wrap: wrap` | `LazyVGrid(columns: [GridItem(.adaptive(minimum: …))])` for uniform tiles; tag clouds → a custom `Layout` (decide the minimum width) |
+| `aspect-ratio: a / b` | `.aspectRatio(a / b, contentMode: .fit)` |
+| `position: sticky` top / bottom | `.safeAreaInset(edge: .top / .bottom)` on the scroll view, or the toolbar / bottom bar of the host |
+| `position: fixed` bottom action | `.safeAreaInset(edge: .bottom)` so it respects the home indicator |
+| `:active` / hover styles | a `ButtonStyle` using `configuration.isPressed`; hover has no touch equivalent |
+| media queries / responsive widths | ignore desktop breakpoints — the app is the narrow layout; both orientations only if the design shows it |
 
 Dynamic styles (`// style_bind: xStyle`) are state-driven: the ViewModel exposes the needed Bool/value and the view switches modifiers; do not
 copy the CSS string itself into the UI.
+
+## Overlays · interactions (tree kinds · overlay screens)
+
+| In the tree | SwiftUI |
+|---|---|
+| overlay screen that slides up (`transform: translateY(100%)` + backdrop) | `.sheet(isPresented:)` with `.presentationDetents([...])` (half → `.medium`, full → `.large`, custom → `.fraction`/`.height`) and `.presentationDragIndicator(.visible)`; the open/close handlers set the same UiState Bool |
+| overlay that covers the screen / a dialog with buttons only | `.fullScreenCover` / `.alert` · `.confirmationDialog` |
+| small anchored menu | `.popover(isPresented:)` + `.presentationCompactAdaptation(.popover)`; action list → `Menu` |
+| host screen with a tab bar (`shell`) | one `TabView` at the root; each tab's tag is a `Route`; the slotted screens are the tab contents |
+| `on_click` on a button-like node | `Button { viewModel.send(.x) }`; destructive look → `role: .destructive` |
+| `input` (text) | `TextField` / `SecureField`; `.keyboardType`, `.textContentType`, `.submitLabel` from the input's purpose; the `bind` key is its binding |
+| `input type="range"` | `Slider(value:in:step:)` — range from the tree's `min`/`max`; the `on_input` handler sends the value |
+| toggle-like node | `Toggle` bound to the `bind` key |
+| `list` | `ForEach` over the item array (`Identifiable`); the handler inside sends `.<items><Handler>(item)`; tapping navigates by id only (`Route.x(id)`) |
+| drag / long press / swipe | `DragGesture` / `LongPressGesture` / `.swipeActions`; swipe-to-dismiss on sheets is native — do not reimplement |

@@ -316,11 +316,6 @@ agents:
 | `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block`(블록이 템플릿과 다르면 wire · prepare 가 갱신) · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
 | `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py`, 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |
 
-## handoff-agent 에서 가져올 것 (`../handoff-agent`, 이식 후 레포와 이 절 삭제)
-
-가져왔다: `leaks.py` · `git.py` · `util.py` 일부 · `api.py` YAML 파서(→ yaml_lite) · 라우트 · `derive.py` 레이아웃 트리(→ tree) · `hooks/guard.py` · `run.py` venv 부트스트랩 · `graph.py` task/submit 패턴 · 테스트 방식 · 멱등 마커 배선 · "남은 칸만 묻기" · `gen.py`(→ gen: 계약 모델 · 클라이언트, MVVM 경로 · Sendable · kotlinx-serialization 으로 재설계).
-남은 것: 빌더 CSS → SwiftUI/Compose 번역표의 나머지 행(→ `<플랫폼>-translate`). 그 뒤 레포와 이 절을 지운다.
-
 ## 금지
 
 - 생성물 · `design/` 손으로 고치기

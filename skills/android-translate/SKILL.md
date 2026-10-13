@@ -45,6 +45,27 @@ Never invent a color or size that is not in the tree. When a row says "decide", 
 | `z-index` | order inside `Box` (later = on top) / `Modifier.zIndex` |
 | `transform: translateY(100%)` (sheet) | `ModalBottomSheet` or `AnimatedVisibility(slideInVertically)` — decide per overlay |
 | `display: none` driven by state | `if` in the tree already — do not add extra conditions |
+| `flex-wrap: wrap` | `FlowRow` / `FlowColumn` (uniform tiles → `LazyVerticalGrid(GridCells.Adaptive(minSize = …))`; decide the minimum width) |
+| `aspect-ratio: a / b` | `Modifier.aspectRatio(a / b)` |
+| `position: sticky` top / bottom | `Scaffold(topBar = / bottomBar =)` of the host, or `stickyHeader` in a `LazyColumn` |
+| `position: fixed` bottom action | `Scaffold(bottomBar =)` or `Box` + `Alignment.BottomCenter` with `navigationBarsPadding()` |
+| `:active` / hover styles | `interactionSource.collectIsPressedAsState()`; hover has no touch equivalent |
+| media queries / responsive widths | ignore desktop breakpoints — the app is the narrow layout; both orientations only if the design shows it |
 
 Dynamic styles (`// style_bind: xStyle`) are state-driven: the ViewModel exposes the needed Boolean/value and the composable switches modifiers; do not
 copy the CSS string itself into the UI.
+
+## Overlays · interactions (tree kinds · overlay screens)
+
+| In the tree | Compose (Material 3) |
+|---|---|
+| overlay screen that slides up (`transform: translateY(100%)` + backdrop) | `ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = <full?>))`; the open/close handlers set the same UiState Boolean |
+| overlay that covers the screen / a dialog with buttons only | `Dialog(properties = DialogProperties(usePlatformDefaultWidth = false))` / `AlertDialog` |
+| small anchored menu | `DropdownMenu` for an action list; `Popup` anchored to the trigger otherwise |
+| host screen with a tab bar (`shell`) | one `NavigationBar` (bottom) or `TabRow` (top) at the root; each item's route is a `Route`; the slotted screens are the tab contents |
+| `on_click` on a button-like node | `Button` / `OutlinedButton` / `TextButton` / `IconButton` by visual weight, `onClick = { onAction(XAction.Y) }` |
+| `input` (text) | `OutlinedTextField` / `TextField`; `KeyboardOptions(keyboardType, imeAction)`, `visualTransformation` from the input's purpose; the `bind` key is `value` + `onValueChange` → action |
+| `input type="range"` | `Slider(value, onValueChange, valueRange, steps)` — range from the tree's `min`/`max`; the `on_input` handler sends the value |
+| toggle-like node | `Switch` bound to the `bind` key |
+| `list` | `LazyColumn { items(list, key = { it.id }) }` (or `forEach` inside a scrolling Column, as the draft shows); the handler inside sends `<Items><Handler>(item)`; navigation by id only (`Route.X(id)`) |
+| drag / long press / swipe | `detectDragGestures` / `combinedClickable(onLongClick)` / `AnchoredDraggable`; swipe-to-dismiss on sheets is native — do not reimplement |

@@ -4,7 +4,6 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
 설계 원칙 · 흐름 · 팀 · 메모리 · 금지 사항은 `AGENT.md` 가 정본이다 — 코드를 고치기 전에 먼저 읽는다.
 
 이 리포는 플러그인 자체다. `features/` `api/` `.twbuild/` 는 여기가 아니라 플러그인을 쓰는 대상 레포에 생긴다.
-참고 구현: `../handoff-agent` (가져올 부품은 AGENT.md "handoff-agent 에서 가져올 것").
 로컬 환경 메모(정리할 경로 · 비공개 링크)는 `CLAUDE.local.md`(gitignore)에 둔다.
 
 ## 현재 상태 · 다음 할 일
@@ -21,7 +20,7 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
 - 디자인 시스템 과제 · `twbuild check` (2026-10-13) — plan 이 `design/ds/components/*.html` 이 있고 `ds.built` 가 없으면 `ds` 과제를 데이터 과제 앞에 둔다(`Core/DesignSystem/Catalog/<Name>`, trailing content 규약) · 게이트 T7(컴포넌트 이름 패리티) · T8(class 노드는 구현된 컴포넌트 호출) · 초안이 class 노드를 `<Name> { }` 로 감싼다 · `twbuild check`(개발자용 정적 게이트 · 패리티 · `--build`). 테스트 26. 사운드스케이프엔 아직 카탈로그 html 이 없다(R-0001 은 부트스트랩 run 이 아니었다) — 다음 design run 을 `--bootstrap` 으로.
 - 웹폰트 · 헤드리스 사이클 실측 (2026-10-13) — `fonts.py`(Google Fonts 정적 TTF → `design/ds/fonts` → 두 앱 등록 · `Fonts.swift/kt` · T9) 사운드스케이프에 Caprasimo · Figtree 4개 등록 · 빌드 통과. 헤드리스 lead(`claude -p --plugin-dir`)로 sound 화면 사이클: 리드 혼자 intake · plan · 배차 · 결정까지 처리, 하네스 버그로 blocked → 고침(워크트리 디코딩 설정 · 생성물 · local.properties · prepare 의 main 합치기 · 재작업 프롬프트 · lead 결정 확정 · 훅 거짓 양성 5종). 테스트 28.
 - T10 · svg (2026-10-13) — 게이트 T10(UiState 필드 이름 · 타입, Action 이름 · 매개변수 타입 패리티) · 트리 icon 노드에 `svg` 경로 데이터(해시 제외, 초안 주석) — 헤드리스 run 의 "문제" 절(타입 불일치 · 하트/별 갈림)에서 나온 것. 테스트 28.
-- 미구현: review · fix 분류 · retro · Android 기기 층 실기기 실측(에뮬레이터 run 진행 중) · handoff 번역표 나머지(그 뒤 `../handoff-agent` 삭제).
+- 미구현: review · fix 분류 · retro · Android 기기 층 실기기 실측(에뮬레이터 run 진행 중). handoff-agent 이식은 2026-10-14 에 끝나 레포 · 메모리 · `~/.claude.json` 항목을 지웠다.
 - 2026-10-11 단순화: 핵심(디자인 정본 → 레이아웃 트리 → 구조 초안 → iOS ∥ AOS → 게이트 3층)만 남기고 나머지는 AGENT.md "나중에".
   지시 관리는 "정본 > 과제 프롬프트 > 나머지" 세 줄로 확정.
 - 측정 확정 (2026-10-11) — 구간별 시간 · 시도 · 토큰 지표, 래퍼 · 훅에서 기록(노드 안 금지), `twbuild stats` 터미널 표만. AGENT.md 13장.
