@@ -234,7 +234,8 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
     elif task["kind"] == "ds":
         cat = design.catalog(root)
         L += ["- Design-system task: implement the catalog components as reusable views under `App/Core/DesignSystem/Catalog/<Name>.swift` (iOS) · `core/designsystem/catalog/<Name>.kt` (Android) — one file per component, the SAME names and parameter names on both platforms (gate T7 compares them):"]
-        L += [f"  - `{c['name']}` ← `{c['file']}` (markup + inline styles + class modifiers = variants)" for c in cat]
+        L += [f"  - `{c['name']}` ← class `.{c.get('class', '')}` in `{c['file']}`" + (f"; parts: {', '.join('.' + p for p in c['parts'])}" if c.get("parts") else "")
+              + (f"; variants (modifier classes → parameters with defaults): {', '.join('.' + m for m in c['modifiers'])}" if c.get("modifiers") else "") for c in cat]
         L += ["- Convention the structure drafts rely on: every component takes trailing content — SwiftUI `struct <Name><Content: View>: View { init(@ViewBuilder content: () -> Content) }`, Compose `@Composable fun <Name>(modifier: Modifier = Modifier, content: @Composable () -> Unit)`; every other parameter has a default. Colors · spacing · radius through `Tokens.*`; no literal values that are not in the component html.",
               "", "## What to do", "1. Read each component html. 2. Implement it with the convention above (plus a preview). 3. Build; `twbuild check` shows the T7 name parity once the other platform's worktree exists. Commit.",
               "4. No screen code, no data code. Report blocked for anything outside Core/DesignSystem."]

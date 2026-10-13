@@ -464,7 +464,11 @@ def cycle_graph_end_to_end():
         check(p["material"]["screens"]["home"]["actions"] == ["itemsOpen", "setName"] and "title" in p["material"]["screens"]["home"]["state_fields"], p["material"]["screens"]["home"])
         check(os.path.isfile(os.path.join(root, "features/mini/brief.md")), "brief")
         # plan — 데이터 과제 + 화면 셋
-        util.write_text(os.path.join(root, "design", "ds", "components", "card.html"), '<div class="card" style="padding: 16px; border-radius: 12px"><slot></slot></div>\n')
+        os.makedirs(os.path.join(root, "design", "ds", "components"), exist_ok=True)
+        shutil.copy(os.path.join(FIX, "ds-cards.html"), os.path.join(root, "design", "ds", "components", "cards.html"))
+        cat = {c["name"]: c for c in design.catalog(root)}
+        check(set(cat) == {"Card", "Btn", "Tag"} and cat["Card"]["parts"] == ["card-body", "card-kicker", "card-meta", "card-title"] and cat["Card"]["modifiers"] == ["elev-lg", "elev-sm"]
+              and cat["Btn"]["modifiers"] == ["btn-primary"], cat)
         out = router.submit(root, {"order": ["home", "stats", "sheet"], "data": ["Item"],
                                    "plans": {"home": {"states": ["isHome", "showHero"], "data": ["Item"], "interactions": ["HOME-1: items open → sheet"]}}})
         p = out["pending"]
@@ -472,7 +476,7 @@ def cycle_graph_end_to_end():
         check(p["task"] == "build" and p["job"]["id"] == "ds" and p["job"]["kind"] == "ds" and "Card" in p["prompts"]["ios"] and "Core/DesignSystem" in p["prompts"]["android"], out.get("message"))
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         p = out["pending"]
-        check("ds/mini/ds" in _git(root, "tag") and design.index(root)["ds"]["built"]["components"] == ["Card"], design.index(root)["ds"])
+        check("ds/mini/ds" in _git(root, "tag") and design.index(root)["ds"]["built"]["components"] == ["Btn", "Card", "Tag"], design.index(root)["ds"])
         # 카탈로그가 구현됐다고 치고(main 에 커밋) — 이후 화면 초안은 class 노드를 Card 로 감싼다 (T8)
         pkg = config.app_vars(config.load(root))["id"].replace(".", "/")
         util.write_text(os.path.join(root, "apps/ios/App/Core/DesignSystem/Catalog/Card.swift"),

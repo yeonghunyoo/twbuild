@@ -229,15 +229,42 @@ def _write_index(root, idx):
     util.write_json(os.path.join(root, INDEX), idx)
 
 
+DEMO_CLASSES = {"demo", "demo-head", "row", "stack", "grid-2", "grid-3", "note"}      # 카탈로그 페이지의 데모 골격 — 컴포넌트가 아니다
+_BASE_CLASS = re.compile(r"^[a-z][a-z0-9]*$")
+
+
 def catalog(root):
-    """디자인 시스템 카탈로그 — design/ds/components/*.html → [{"name": Pascal, "file": rel}]. 첫 사이클의 디자인 시스템 과제가 이것을 네이티브 컴포넌트로 만든다."""
+    """디자인 시스템 카탈로그 — design/ds/components/*.html 의 클래스에서 컴포넌트를 뽑는다(실측: Organic 의 cards.html 은 `.card` + 부품 `.card-kicker` + 변형 `.elev-sm` 가 한 페이지에 여럿).
+    → [{"name": Pascal, "class": "card", "file": rel, "parts": [...], "modifiers": [...]}]. 기본 클래스(한 단어, 요소의 첫 클래스)가 컴포넌트,
+    같은 요소의 나머지 클래스가 변형, `<기본>-x` 가 첫 클래스인 요소가 부품. 클래스가 없는 페이지는 파일 이름이 컴포넌트다."""
     d = os.path.join(root, util.DESIGN_DIR, "ds", "components")
-    out = []
-    if os.path.isdir(d):
-        for n in sorted(os.listdir(d)):
-            if n.endswith(".html"):
-                out.append({"name": util.pascal(n[:-5]), "file": os.path.join(util.DESIGN_DIR, "ds", "components", n)})
-    return out
+    found = {}
+    if not os.path.isdir(d):
+        return []
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".html"):
+            continue
+        rel = os.path.join(util.DESIGN_DIR, "ds", "components", n)
+        text = util.read_text(os.path.join(d, n), "")
+        elements = [m.group(1).split() for m in re.finditer(r'class="([^"]+)"', text)]
+        bases = {}
+        for classes in elements:
+            base = classes[0]
+            if base in DEMO_CLASSES or not _BASE_CLASS.match(base):
+                continue
+            e = bases.setdefault(base, {"modifiers": set(), "parts": set()})
+            e["modifiers"].update(c for c in classes[1:] if c not in DEMO_CLASSES)
+        for classes in elements:
+            for base in bases:
+                if classes[0].startswith(base + "-"):
+                    bases[base]["parts"].add(classes[0])
+        if not bases:
+            bases[n[:-5]] = {"modifiers": set(), "parts": set()}
+        for base, e in bases.items():
+            cur = found.setdefault(base, {"name": util.pascal(base), "class": base, "file": rel, "parts": set(), "modifiers": set()})
+            cur["parts"] |= e["parts"]
+            cur["modifiers"] |= e["modifiers"]
+    return [{**e, "parts": sorted(e["parts"]), "modifiers": sorted(e["modifiers"])} for _, e in sorted(found.items())]
 
 
 def catalog_names(root):
