@@ -20,7 +20,8 @@ twbuild — iOS · Android 네이티브 개발자 둘과 리드로 이뤄진 가
 - 디자인 시스템 과제 · `twbuild check` (2026-10-13) — plan 이 `design/ds/components/*.html` 이 있고 `ds.built` 가 없으면 `ds` 과제를 데이터 과제 앞에 둔다(`Core/DesignSystem/Catalog/<Name>`, trailing content 규약) · 게이트 T7(컴포넌트 이름 패리티) · T8(class 노드는 구현된 컴포넌트 호출) · 초안이 class 노드를 `<Name> { }` 로 감싼다 · `twbuild check`(개발자용 정적 게이트 · 패리티 · `--build`). 테스트 26. 사운드스케이프엔 아직 카탈로그 html 이 없다(R-0001 은 부트스트랩 run 이 아니었다) — 다음 design run 을 `--bootstrap` 으로.
 - 웹폰트 · 헤드리스 사이클 실측 (2026-10-13) — `fonts.py`(Google Fonts 정적 TTF → `design/ds/fonts` → 두 앱 등록 · `Fonts.swift/kt` · T9) 사운드스케이프에 Caprasimo · Figtree 4개 등록 · 빌드 통과. 헤드리스 lead(`claude -p --plugin-dir`)로 sound 화면 사이클: 리드 혼자 intake · plan · 배차 · 결정까지 처리, 하네스 버그로 blocked → 고침(워크트리 디코딩 설정 · 생성물 · local.properties · prepare 의 main 합치기 · 재작업 프롬프트 · lead 결정 확정 · 훅 거짓 양성 5종). 테스트 28.
 - T10 · svg (2026-10-13) — 게이트 T10(UiState 필드 이름 · 타입, Action 이름 · 매개변수 타입 패리티) · 트리 icon 노드에 `svg` 경로 데이터(해시 제외, 초안 주석) — 헤드리스 run 의 "문제" 절(타입 불일치 · 하트/별 갈림)에서 나온 것. 테스트 28.
-- 미구현: review · fix 분류 · retro · Android 기기 층 실기기 실측(에뮬레이터 run 진행 중). handoff-agent 이식은 2026-10-14 에 끝나 레포 · 메모리 · `~/.claude.json` 항목을 지웠다.
+- sound 머지 · 두 번째 사이클 (2026-10-14) — 헤드리스 lead 4차에서 sound 화면 머지(5개 층 · 기기 iOS + Android 통과, 측정 요약 커밋). 리드 보고의 문제로 고친 것: 하네스 · 사람 원인 멈춤은 시도 차감 · 증거 보고서 결정 범위 · stats 표 배차/스모크/빌드 합 · 재작업 머리말 · T7 범위 · 히어독 · 재작업 플랫폼 분리 · 옛 생성물 정리 · JUnit 템플릿. 잠정 결정 29건 정리(확정 21 · 뒤집기 1 · 폐기 1 · 셸 임시 5 잠정 유지). R-0002 부트스트랩 run(카탈로그 · foundations · readme · theme 캡처) + spec 이어받기. 번역표 포팅 완료 · handoff-agent 레포 · 메모리 · `~/.claude.json` 항목 삭제. 세 번째 사이클(stats · nowPlaying · settings + SettingsStore) 헤드리스 진행 중.
+- 미구현: review · fix 분류 · retro.
 - 2026-10-11 단순화: 핵심(디자인 정본 → 레이아웃 트리 → 구조 초안 → iOS ∥ AOS → 게이트 3층)만 남기고 나머지는 AGENT.md "나중에".
   지시 관리는 "정본 > 과제 프롬프트 > 나머지" 세 줄로 확정.
 - 측정 확정 (2026-10-11) — 구간별 시간 · 시도 · 토큰 지표, 래퍼 · 훅에서 기록(노드 안 금지), `twbuild stats` 터미널 표만. AGENT.md 13장.

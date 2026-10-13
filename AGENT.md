@@ -64,7 +64,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 - 원장 판정: 빌드에 쓴 트리 해시 = 현재 트리 해시 → 최신. 다르면 run 간 트리 diff(바뀐 노드 ID)를 재작업 과제로 낸다 — 개발자 코드를 덮지 않는다.
 - 원장은 결정적 단계만 쓴다. LLM 은 쓰지 않는다.
 
-**화면 매핑** — `tree.detect_screens` 가 후보를 내고 lead 가 이름을 확인한다(`sheet` → `mixer` 처럼). 못 가르면 lead 과제.
+**화면 매핑** — `tree.detect_screens` 가 후보를 내고 lead 가 이름을 확인한다(`sheet` → `mixer` 처럼). 못 가르면 lead 과제. 확인한 spec 은 run 기록에 남고(`design/runs/R-000N.json` `spec`) 다음 run 은 같은 분기(kind · when · style)에 그 이름을 이어받는다 — 실측(R-0002): 자동 감지가 mixer 를 sheet 로 되돌려 한 화면이 removed/added 로 갈렸다.
 
 | 종류 | 근거 | 예 (사운드스케이프) |
 |---|---|---|
@@ -129,7 +129,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 |---|---|---|
 | intake | lead + 결정적 | brief 정리 · (필요하면) design run → 트리 · 화면 매핑 · 구조 초안 시험 실행 |
 | plan | lead | 화면 플랜(쓰는 데이터 `data:` 포함) · 카탈로그 컴포넌트 매핑 · 필요한 계약 변경 + 재생성 |
-| build | 결정적 + 개발자 둘 | 디자인 시스템 과제(`design/ds/components/*.html` 이 있고 원장 `ds.built` 가 없을 때 — 카탈로그 컴포넌트를 `Core/DesignSystem/Catalog/<Name>` 으로, 두 플랫폼 같은 이름 · 매개변수, trailing content 규약) → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev |
+| build | 결정적 + 개발자 둘 | 디자인 시스템 과제(카탈로그 `design/ds/components/*.html` 의 클래스 가운데 **이 기능의 트리가 쓰는 것**이 있고 원장 `ds.built` 가 없을 때 — `Core/DesignSystem/Catalog/<Name>`, 두 플랫폼 같은 이름 · 매개변수, trailing content 규약. 카탈로그는 클래스 기반: 기본 클래스 = 컴포넌트, `<기본>-x` = 부품, 같은 요소의 나머지 = 변형) → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev. 실측: 사운드스케이프 화면은 class 를 안 써 ds 과제가 없다(카탈로그 캡처 R-0002 는 됨) |
 | smoke | 결정적 | 게이트 3층 (6장). 실패 → build 재작업, 화면당 예산(기본 5회)을 넘으면 `blocked` |
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
 
@@ -332,8 +332,8 @@ agents:
 | 1 | 플러그인 에이전트 `skills:` 프리로드 | ✅ `twbuild:dev-loop` · `dev-loop` 둘 다. 에이전트 타입은 `twbuild:<이름>` |
 | 2 | 서브에이전트 안 훅 `additionalContext` | ✅ SubagentStart · PreToolUse · PostToolUse 모두. 입력에 `agent_id` · `agent_type` |
 | 3 | 워크트리에서 `.claude/rules` `paths:` | ✅ 그 워크트리의 rules 가 워크트리 기준으로 로드. 메인 레포 rule 은 안 붙음 → 결정은 훅 주입, rule 은 전부 경로 스코프 |
-| 4 | 화면 하나 한 사이클의 수렴 횟수 · 시간 | ✅ 2026-10-12 사운드스케이프 forest: 데이터 2회(T6 이름 패리티 재작업 1회) · onboarding 1회 · home 1회 모두 통과 · 머지. 개발자 과제(두 플랫폼 병렬) 평균 9m51s, 4회 39m25s. 정적 위반 0 · 빌드 실패 0. 에이전트 토큰은 훅 미설치 세션이라 못 잼 |
-| 5 | 기기 스모크를 머지 직전 한 번으로 감당 | ✅ 2026-10-13 사운드스케이프 iOS: iPhone 17 Pro 시뮬레이터에 설치 · 실행 · 5초 생존 9.6s(첫 회는 부팅 포함 통과). Android 는 에뮬레이터 미기동으로 못 잼 → 사이클 실측은 아래 |
+| 4 | 화면 하나 한 사이클의 수렴 횟수 · 시간 | ✅ 2026-10-12 사운드스케이프 forest: 데이터 2회(T6 재작업 1회) · onboarding 1회 · home 1회, 개발자 과제 평균 9m51s(토큰 못 잼 — 훅 미설치 세션). ✅ 2026-10-13~14 sound 화면을 플러그인 설치 헤드리스 lead 로: 스모크 3회(1 · 2회는 하네스 버그 — 워크트리 디코딩 설정 · 생성물 누락 · T7 거짓 양성), 5개 층 전부 통과 · 머지. 개발자 과제 iOS 3m59s · 293k 토큰, Android 4m39s · 288k 토큰(5회 배차 합) · 리드 세션 4회 합 $18 · 노드당 토큰 2982 |
+| 5 | 기기 스모크를 머지 직전 한 번으로 감당 | ✅ 2026-10-14 sound 머지 직전 한 번: iOS iPhone 17 Pro 시뮬레이터 17.6s · Android emulator-5554(Pixel 8 Pro API 35, 헤드리스) 25.3s — 둘 다 5초 생존 통과 |
 | 6 | 디자인 import — 실제 프로젝트(사운드스케이프) 트리 · 토큰 | ✅ 화면 8개 · 생성 토큰으로 두 플랫폼 빌드 통과 (훅 경로는 플러그인 설치 세션에서 실측 필요) |
 
 2026-10-11 · Claude Code 2.1.296 · 카나리 토큰 + 서브에이전트 트랜스크립트로 판정. 디자인 커넥터 실측: 텍스트 11개 바이트 일치 · 검문 거부 동작 · PNG 거부 · standalone HTML 은 1 MB 한 줄이 256 KiB 상한에 잘림.
