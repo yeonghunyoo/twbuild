@@ -129,16 +129,18 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 |---|---|---|
 | intake | lead + 결정적 | brief 정리 · (필요하면) design run → 트리 · 화면 매핑 · 구조 초안 시험 실행 |
 | plan | lead | 화면 플랜(쓰는 데이터 `data:` 포함) · 카탈로그 컴포넌트 매핑 · 필요한 계약 변경 + 재생성 |
+| review | 결정적 + lead | 킥오프 검토 — 플랜 ↔ 트리 린트(핸들러에 상호작용이 없다 · if 상태가 states 에 없다 · data 가 데이터 과제에도 기존 객체에도 없다 · 호스트가 슬롯 화면보다 앞이다). 빈틈이 있으면 lead 과제: 부분 수정(병합 · 재검토) 또는 accept |
 | build | 결정적 + 개발자 둘 | 디자인 시스템 과제(카탈로그 `design/ds/components/*.html` 의 클래스 가운데 **이 기능의 트리가 쓰는 것**이 있고 원장 `ds.built` 가 없을 때 — `Core/DesignSystem/Catalog/<Name>`, 두 플랫폼 같은 이름 · 매개변수, trailing content 규약. 카탈로그는 클래스 기반: 기본 클래스 = 컴포넌트, `<기본>-x` = 부품, 같은 요소의 나머지 = 변형) → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev. 실측: 사운드스케이프 화면은 class 를 안 써 ds 과제가 없다(카탈로그 캡처 R-0002 는 됨) |
-| smoke | 결정적 | 게이트 3층 (6장). 실패 → build 재작업, 화면당 예산(기본 5회)을 넘으면 `blocked` |
+| smoke | 결정적 | 게이트 3층 (6장). 실패 → **fix 분류**: rework(개발자 몫 — 정적 · 빌드 · 크래시 · 패리티) · retry(흔들림 — 시간 초과, 재배차 없이 한 번 다시 잰다) · blocked(하네스 · lead 몫 — 생성물 안 컴파일 · 계약 예시 디코딩 실패 · T9; 재작업으론 못 고친다). 화면당 예산(기본 5회)을 넘으면 `blocked` |
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
+| retro | 결정적 | 사이클 끝 — 요약 숫자를 이력(`cycles/<기능>.history.json`)에 보태고 이전 사이클과 비교한 회고(`.twbuild/reports/<기능>/_retro.md`: 첫 시도 통과율 · 스모크/배차 · 빌드 · 노드당 토큰 · 재작업 규칙 · 멈춤 사유(하네스 vs 개발자) · 제안)를 쓴다. LLM 없음. `twbuild stats --retro <기능>` |
 
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
 - 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
   merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` · 측정 요약 · 잠금을 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다. plan 이 계약을 바꾸면 생성물까지 `contract(<기능>)` 커밋. `_data.yaml` 의 엔티티는 사이클마다 합집합.
   실측(2026-10-13 헤드리스 lead, sound 화면): 리드가 intake · plan · 배차 · 결정(D-33 확정 · D-35→D-39 뒤집기)을 혼자 처리했고 19턴 · 8.6분 · $8.56(개발자 제외). 멈춤 원인은 하네스 버그(워크트리 디코딩 설정 · 생성물 누락 · 훅 거짓 양성 · 재작업 프롬프트 누락)였고 전부 고쳤다.
-  아직 없는 것: review · fix 분류(지금은 실패 전부 → 재작업) · retro.
+  review · fix 분류 · retro 는 2026-10-14 에 붙었다(위 표).
 - 사람에게 묻는 것은 전부 ask(AskUserQuestion — 선택지 + 직접 입력, 추천을 맨 위에). 채팅 자유 질문은 쓰지 않는다.
 - 그래프가 과제마다 "호출할 스킬" 을 싣는다.
 - 노드는 부작용 뒤에 interrupt 하지 않는다(재개 시 노드가 처음부터 돈다). 저장 상태보다 실측이 이긴다.
@@ -240,7 +242,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 비교: 트리 노드 수로 나눈 값(노드당 시간 · 토큰). 모든 기록에 플러그인 버전 · 커밋 · 모델 · 설정 해시를 붙인다.
 - 기록: `.twbuild/metrics/events.jsonl` (추가 전용, gitignore). 래퍼 · 훅 · CLI 만 쓴다 — **노드 안에서 쓰지 않는다**(재개 때 중복). 키 `(thread, 노드, 시도)` 는 한 번만.
   merge 가 기능 요약 `.twbuild/metrics/cycles/<기능>.json`(화면 · 트리 노드 수 · 과제별 시도 · 첫 시도 통과율 · 빌드 · 개발자 시간 · 토큰 · 노드당 값 · 결정 수 · 못 잼 수)을 `ledger(…)` 커밋에 넣는다(마스킹 · 경로 없음; `.gitignore` 블록이 `.twbuild/metrics/cycles/` 와 `lock.json` 만 예외로 둔다).
-- LLM 자기신고는 쓰지 않는다. `twbuild stats`(노드 · 과제 · 화면별 표) · `--feature <기능>`(요약 표) · `--compare`(기능별 한 줄 — 노드당 정규화 · 플러그인 버전). 못 잰 칸은 "못 잼".
+- LLM 자기신고는 쓰지 않는다. `twbuild stats`(노드 · 과제 · 화면별 표) · `--feature <기능>`(요약 표) · `--compare`(기능별 한 줄 — 노드당 정규화 · 플러그인 버전) · `--retro <기능>`(회고). 못 잰 칸은 "못 잼". 멈춤(`blocked` 이벤트)은 사유별로 세어 하네스 원인과 개발자 원인을 가른다.
 - 외부 도구(OTel · LangSmith 등) · HTML 대시보드는 두지 않는다 — LLM 이 그래프 밖이라 트레이서엔 결정적 노드만 보이고, 외부 전송은 11장과 충돌한다.
 
 ## 14. 앱 구조 — MVVM + UDF (기본)

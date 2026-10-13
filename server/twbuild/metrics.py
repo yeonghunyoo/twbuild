@@ -221,6 +221,10 @@ def feature_summary(root, feature):
     tokens = sum(p["tokens"] for t in tasks.values() for p in t["platforms"].values())
     measured_agents = sum(p["agents"] for t in tasks.values() for p in t["platforms"].values())
     decs = [d for d in decide.ledger(root)["decisions"] if d.get("feature") == feature]
+    blocks = {}
+    for e in events(root):
+        if e.get("ev") == "blocked" and e.get("feature") == feature:
+            blocks[e.get("reason") or "?"] = blocks.get(e.get("reason") or "?", 0) + 1
     done = [t for t in tasks.values() if t["passed"]]
     out = {"feature": feature, "t": util.now(), "ver": {**util.plugin_version(), "config": config.digest(config.load(root))},
            "screens": screens, "tree_nodes": tree_nodes, "tasks": tasks, "nodes": nodes,
@@ -231,6 +235,7 @@ def feature_summary(root, feature):
            "agent_ms": agent_ms if measured_agents else None, "tokens": tokens if measured_agents else None,
            "per_node": {"agent_ms": (agent_ms / tree_nodes) if (measured_agents and tree_nodes) else None,
                         "tokens": (tokens / tree_nodes) if (measured_agents and tree_nodes) else None},
+           "blocks": blocks,
            "decisions": {"total": len(decs), "confirmed": sum(d["status"] == "confirmed" for d in decs),
                          "tentative": sum(d["status"] == "tentative" for d in decs), "flipped": sum(d["status"] == "flipped" for d in decs)},
            "unmeasured": {"agents": sum(1 for t in tasks.values() for p in t["platforms"].values() if not p["agents"]),
@@ -243,6 +248,72 @@ def write_feature_summary(root, feature):
     rel = os.path.join(util.TW_DIR, util.METRICS_DIR, CYCLES_DIR, f"{feature}.json")
     util.write_json(os.path.join(root, rel), feature_summary(root, feature))
     return rel
+
+
+HISTORY = ".history.json"
+HARNESS_REASONS = ("harness fix needed", "lead fix needed", "worktree merge conflict", "secret in branch", "tree changed during build", "merge conflict")
+
+
+def history(root, feature):
+    return util.read_json(os.path.join(_dir(root), CYCLES_DIR, f"{feature}{HISTORY}"), []) or []
+
+
+def close_cycle(root, feature):
+    """사이클이 끝났다 — 요약의 핵심 숫자를 이력에 한 줄 보탠다(retro 가 이전 사이클과 비교한다). 같은 사이클을 두 번 닫지 않는다."""
+    s = feature_summary(root, feature)
+    hist = history(root, feature)
+    snap = {"n": len(hist) + 1, "t": s["t"], "ver": s["ver"], "tasks": len(s["tasks"]), "tree_nodes": s["tree_nodes"],
+            "first_try_pass_rate": s["first_try_pass_rate"], "attempts_per_task": s["attempts_per_task"], "dispatches_per_task": s.get("dispatches_per_task"),
+            "build_ms": s["build_ms"], "agent_ms": s["agent_ms"], "tokens": s["tokens"], "per_node": s["per_node"], "blocks": s.get("blocks") or {},
+            "violations": sorted({v for t in s["tasks"].values() for p in t["platforms"].values() for v in (p.get("violations") or [])}),
+            "decisions": s["decisions"], "unmeasured": s["unmeasured"], "screens": s["screens"]}
+    if hist and hist[-1].get("tasks") == snap["tasks"] and hist[-1].get("screens") == snap["screens"] and hist[-1].get("tokens") == snap["tokens"]:
+        return hist[-1]
+    hist.append(snap)
+    util.write_json(os.path.join(_dir(root), CYCLES_DIR, f"{feature}{HISTORY}"), hist)
+    return snap
+
+
+def _delta(cur, prev, fmt, lower_is_better=True):
+    if cur is None or prev is None:
+        return fmt(cur) if cur is not None else "못 잼"
+    arrow = "" if cur == prev else ("↓" if (cur < prev) == lower_is_better else "↑")
+    return f"{fmt(cur)} (이전 {fmt(prev)} {arrow})".strip()
+
+
+def retro_markdown(root, feature):
+    """회고 보고서(한국어) — 이번 사이클 숫자 · 이전 사이클 대비 · 재작업 원인 · 멈춤 사유 · 제안. 자기신고 없이 기록만으로."""
+    hist = history(root, feature)
+    if not hist:
+        return f"# {feature} — 회고\n\n이력이 없다."
+    cur, prev = hist[-1], (hist[-2] if len(hist) > 1 else None)
+    g = (lambda k: (prev or {}).get(k)) if prev else (lambda k: None)
+    pn, ppn = cur.get("per_node") or {}, (prev or {}).get("per_node") or {}
+    L = [f"# {feature} — 회고 (사이클 {cur['n']})", "",
+         f"- 과제 {cur['tasks']}개 · 트리 노드 {cur['tree_nodes']}개 · 플러그인 {cur['ver'].get('plugin')}@{cur['ver'].get('commit')}",
+         f"- 첫 시도 통과율: {_delta(cur['first_try_pass_rate'], g('first_try_pass_rate'), _rate, lower_is_better=False)}",
+         f"- 스모크/과제: {_delta(cur['attempts_per_task'], g('attempts_per_task'), lambda x: _num(x, '{:.1f}'))} · 배차/과제: {_delta(cur.get('dispatches_per_task'), g('dispatches_per_task'), lambda x: _num(x, '{:.1f}'))}",
+         f"- 빌드 합: {_delta(cur['build_ms'], g('build_ms'), lambda x: _fmt_ms(x or None))} · 개발자/노드: {_delta(pn.get('agent_ms'), ppn.get('agent_ms'), _fmt_ms)} · 토큰/노드: {_delta(pn.get('tokens'), ppn.get('tokens'), _num)}",
+         f"- 결정: {cur['decisions'].get('total', 0)}(확정 {cur['decisions'].get('confirmed', 0)} · 잠정 {cur['decisions'].get('tentative', 0)})",
+         f"- 못 잼: 개발자 과제 {cur['unmeasured'].get('agents', 0)} · 빌드 {cur['unmeasured'].get('builds', 0)}"]
+    if cur.get("violations"):
+        L += ["", "## 재작업 원인 (규칙)", ""] + [f"- {v}" for v in cur["violations"]]
+    if cur.get("blocks"):
+        harness = sum(n for r, n in cur["blocks"].items() if r in HARNESS_REASONS)
+        L += ["", "## 멈춤", ""] + [f"- {r}: {n}회" for r, n in sorted(cur["blocks"].items())] + [f"- 하네스 · lead 원인 {harness}회 / 전체 {sum(cur['blocks'].values())}회"]
+    tips = []
+    if (cur.get("first_try_pass_rate") or 0) < 0.5:
+        tips.append("첫 시도 통과율이 절반 아래다 — 재작업 원인 규칙을 플레이북 · 번역표에 먼저 반영한다")
+    if any(v in ("T6", "T7", "T10") for v in cur.get("violations") or []):
+        tips.append("이름 · 타입 패리티 재작업이 있었다 — 데이터 · 컴포넌트 · UiState 이름 규약을 과제 프롬프트 맨 위에 올린다")
+    if cur.get("blocks") and sum(n for r, n in cur["blocks"].items() if r in HARNESS_REASONS):
+        tips.append("하네스 · lead 원인 멈춤이 있었다 — 그 run 의 리드 보고 '문제' 절을 고치고 테스트를 더한다")
+    if (cur["unmeasured"].get("agents") or 0):
+        tips.append("개발자 과제 시간 · 토큰을 못 잰 과제가 있다 — 플러그인 설치 세션(훅)에서 돌린다")
+    if prev and pn.get("tokens") and ppn.get("tokens") and pn["tokens"] > ppn["tokens"] * 1.3:
+        tips.append("노드당 토큰이 이전 사이클보다 30% 넘게 늘었다 — 과제 프롬프트 길이 · 재작업 횟수를 본다")
+    L += ["", "## 제안", ""] + ([f"- {t}" for t in tips] or ["- 없음 — 같은 잣대로 다음 사이클을 비교한다"])
+    return "\n".join(L) + "\n"
 
 
 def summaries(root):

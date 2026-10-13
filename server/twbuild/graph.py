@@ -204,6 +204,9 @@ def _node_metrics(root, which, name, step, result, feature=None):
                                violations=[v["rule"] for v in (r.get("static") or {}).get("violations") or []], passed=result.get("phase") == "merge")
     elif name == "merge" and result.get("phase") in ("build", "done"):
         metrics.record(root, "merged", key=f"merged:{step}", step=step, cursor=result.get("cursor"), feature=feature)
+    if result.get("phase") == "blocked" and isinstance(result.get("blocked"), dict):      # 멈춤 — 사유별로 센다 (retro: 하네스 원인 vs 개발자 원인)
+        b = result["blocked"]
+        metrics.record(root, "blocked", key=f"blocked:{step}", step=step, node=name, feature=feature, reason=b.get("reason"), task=(b.get("job") or {}).get("id"))
 
 
 def run(root, which, resume=None):

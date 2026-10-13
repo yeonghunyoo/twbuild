@@ -483,6 +483,14 @@ def cycle_graph_end_to_end():
         out = router.submit(root, {"order": ["home", "stats", "sheet"], "data": ["Item"],
                                    "plans": {"home": {"states": ["isHome", "showHero"], "data": ["Item"], "interactions": ["HOME-1: items open → sheet"]}}})
         p = out["pending"]
+        # review(킥오프 검토): 플랜에 없는 핸들러 · if 상태를 lead 에게 되묻는다 → 부분 수정은 병합되고 다시 검토 → accept 로 진행
+        check(p["task"] == "review" and any("setName" in f for f in p["findings"]), p.get("findings"))
+        out = router.submit(root, {"plans": {"home": {"interactions": ["HOME-1: items open → sheet", "HOME-2: setName → UiState.title"]}}})
+        p = out["pending"]
+        check(p["task"] == "review" and not any("setName" in f for f in p["findings"]) and any(f.startswith(("stats", "sheet")) for f in p["findings"]), p.get("findings"))
+        check("HOME-2" in util.read_text(os.path.join(root, ".twbuild/plans/mini/home.yaml")), "플랜 병합")
+        out = router.submit(root, {"accept": True})
+        p = out["pending"]
         # 디자인 시스템 카탈로그가 있으면 ds 과제가 먼저 — 개발자가 아무것도 안 해도(T7 못 잼) 머지되고 원장 ds.built 가 선다
         check(p["task"] == "build" and p["job"]["id"] == "ds" and p["job"]["kind"] == "ds" and "Card" in p["prompts"]["ios"] and "Core/DesignSystem" in p["prompts"]["android"], out.get("message"))
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
@@ -596,6 +604,13 @@ def cycle_graph_end_to_end():
         util.write_text(f, orig)
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         check(out.get("pending") is None and "사이클 완료" in out.get("report", ""), out)
+        # retro: 이력 한 줄 + 회고 보고서(이전 사이클 없음) · 커밋 · stats --retro
+        hist = metrics.history(root, "mini")
+        check(len(hist) == 1 and hist[0]["n"] == 1 and hist[0]["tasks"] >= 4 and "T1" in hist[0]["violations"], hist)
+        retro = util.read_text(os.path.join(root, ".twbuild/reports/mini/_retro.md"))
+        check("회고 (사이클 1)" in retro and "T1" in retro and "제안" in retro, retro[:400])
+        check("retro(mini)" in _git(root, "log", "--oneline", "--", ".twbuild/metrics/cycles"), "retro 커밋")
+        check(metrics.close_cycle(root, "mini")["n"] == 1 and len(metrics.history(root, "mini")) == 1, "같은 사이클은 두 번 닫지 않는다")
         check(all(v["status"] == "consumed" for v in design.index(root)["screens"].values()), design.index(root)["screens"])
         evs = metrics.events(root)
         kinds = {e["ev"] for e in evs}
@@ -705,6 +720,30 @@ def gitignore_block_upgrade():
         shutil.rmtree(root, ignore_errors=True)
 
 
+
+@case
+def fix_classification():
+    """fix 분류 — 개발자 재작업 · 흔들림 재측정 · 하네스/계약 원인 멈춤."""
+    from twbuild import cycle
+    ok = {"static": {"status": "pass", "violations": []}, "build": {"status": "pass"}, "contract_decode": {"status": "pass"}, "device": {"status": "pass"}, "parity": {"status": "pass", "violations": []}}
+    c = cycle.classify_failure({"ios": {**ok, "static": {"status": "fail", "violations": [{"rule": "T1", "detail": "x"}]}}, "android": ok})
+    check(c["kind"] == "rework" and c["owner"] == "dev" and "T1" in c["detail"], c)
+    c = cycle.classify_failure({"ios": ok, "android": {**ok, "build": {"status": "fail", "detail": "exit 1", "tail": "error: Networking/Generated/Models.kt:3 unresolved"}}})
+    check(c["kind"] == "blocked" and c["owner"] == "harness" and "generated" in c["detail"], c)
+    c = cycle.classify_failure({"ios": {**ok, "contract_decode": {"status": "fail", "detail": "디코딩 실패 1개: GET /health 200 · 예시 16개"}}, "android": ok})
+    check(c["kind"] == "blocked" and c["owner"] == "lead", c)
+    c = cycle.classify_failure({"ios": {**ok, "device": {"status": "fail", "detail": "명령이 600s 안에 끝나지 않았다"}}, "android": ok})
+    check(c["kind"] == "retry", c)
+    c = cycle.classify_failure({"ios": {**ok, "device": {"status": "fail", "detail": "명령이 600s 안에 끝나지 않았다"}}, "android": ok}, retries=1)
+    check(c["kind"] == "rework", "재측정은 한 번만")
+    c = cycle.classify_failure({"ios": {**ok, "device": {"status": "fail", "detail": "5s 안에 죽었다 (crash)"}}, "android": ok})
+    check(c["kind"] == "rework" and "alive" in c["detail"], c)
+    c = cycle.classify_failure({"ios": {**ok, "parity": {"status": "fail", "violations": [{"rule": "T9", "detail": "fonts differ"}]}}, "android": ok})
+    check(c["kind"] == "blocked" and c["owner"] == "harness", c)
+    # 개발자 몫이 하나라도 있으면 rework — 하네스 사유도 상세에 함께
+    c = cycle.classify_failure({"ios": {**ok, "static": {"status": "fail", "violations": [{"rule": "T3", "detail": "x"}]}}, "android": {**ok, "parity": {"status": "fail", "violations": [{"rule": "T9", "detail": "fonts"}]}}})
+    check(c["kind"] == "rework" and "T9" in c["detail"], c)
+
 if __name__ == "__main__":
     sys.modules.setdefault("cases", sys.modules[__name__])          # 형제 모듈의 `from cases import case` 가 이 인스턴스를 보게
     for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts"):
@@ -713,3 +752,4 @@ if __name__ == "__main__":
         except ImportError:
             pass
     sys.exit(main(sys.argv))
+

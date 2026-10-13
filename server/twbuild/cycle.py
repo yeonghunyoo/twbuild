@@ -37,6 +37,7 @@ class CycleState(TypedDict, total=False):
     dev: dict            # 마지막 dispatch 의 개발자 결과
     reports: list
     blocked: dict
+    retries: dict        # id → 스모크 재측정 횟수 (fix 분류: 흔들림)
     log: Annotated[list, operator.add]
 
 
@@ -70,7 +71,7 @@ def n_intake(s):
         util.write_text(os.path.join(root, util.FEATURES_DIR, feature, "brief.md"), f"# {feature}\n\n{str(payload['brief']).strip()}\n")
     want = payload.get("screens") if isinstance(payload.get("screens"), list) and payload.get("screens") else [k.split("/", 1)[1] for k in keys]
     return {"phase": "plan", "feature": feature, "screens": [str(x) for x in want], "order": [], "cursor": 0, "attempts": {}, "results": {},
-            "dev": {}, "reports": [], "blocked": None, "log": [f"intake:{feature}"]}
+            "dev": {}, "reports": [], "blocked": None, "retries": {}, "log": [f"intake:{feature}"]}
 
 
 def _after_intake(s):
@@ -176,7 +177,96 @@ def n_plan(s):
 
 
 def _after_plan(s):
-    return "prepare" if s.get("phase") == "build" else "plan"
+    return "review" if s.get("phase") == "build" else "plan"
+
+
+# ─────────────────────────── review (킥오프 검토 — 결정적 린트 + lead 과제) ───────────────────────────
+
+def _if_keys(n, out=None):
+    out = set() if out is None else out
+    if isinstance(n, dict):
+        if n.get("kind") == "if" and n.get("when"):
+            out.add(str(n["when"]))
+        for c in n.get("children") or []:
+            _if_keys(c, out)
+    return out
+
+
+def review_findings(root, feature, s):
+    """플랜 ↔ 트리 · 데이터 · 순서의 빈틈 (영어 — lead 가 읽는다). 비어 있으면 통과."""
+    order = [t for t in s.get("order") or [] if t["kind"] == "screen"]
+    lays = _layouts(root, feature)
+    vars_ = config.app_vars(config.load(root))
+    ents = (yaml_lite.loads(util.read_text(os.path.join(root, PLANS, feature, "_data.yaml"), "")) or {}).get("entities") or []
+    existing = gate.data_types(root, "ios", vars_) | gate.data_types(root, "android", vars_)
+    known = {str(e).lower() for e in ents}
+    for n in existing:
+        known.add(n.lower())
+        for suf in ("repository", "store", "draft"):
+            if n.lower().endswith(suf):
+                known.add(n.lower()[:-len(suf)])
+    out = []
+    for i, t in enumerate(order):
+        sid = t["id"]
+        lay = lays.get(sid)
+        plan = yaml_lite.loads(util.read_text(os.path.join(root, PLANS, feature, f"{sid}.yaml"), "")) or {}
+        if not lay:
+            out.append(f"{sid}: no layout tree")
+            continue
+        st = tree.status(lay)
+        text = " ".join(str(x) for x in (plan.get("interactions") or [])) + " " + str(plan.get("notes") or "")
+        for h in sorted(st.get("handlers") or []):
+            if h.split(".")[-1] not in text:
+                out.append(f"{sid}: handler `{h}` has no interaction in the plan — say what it does (navigation · data · state)")
+        for k in sorted(_if_keys(lay.get("root"))):
+            if k not in (plan.get("states") or []):
+                out.append(f"{sid}: if-state `{k}` of the tree is not in plan.states")
+        for d in plan.get("data") or []:
+            if str(d).lower() not in known:
+                out.append(f"{sid}: data `{d}` is neither in the data task {ents} nor an existing data object — add it to `data` or name the existing one")
+        for ref in st.get("screen_refs") or []:
+            j = next((k for k, u in enumerate(order) if u["id"] == ref), None)
+            if j is not None and j > i:
+                out.append(f"{sid}: hosts slot `{ref}` but is ordered before it — hosts come after the screens they slot in")
+    return out
+
+
+def n_review(s):
+    """묻는 노드 — 린트(순수) → 빈틈이 있으면 lead 과제 → 수정 반영(재개 뒤) → 다시 린트. accept 면 그대로 간다."""
+    root, feature = s["root"], s["feature"]
+    findings = review_findings(root, feature, s)
+    if not findings:
+        return {"phase": "build", "log": ["review:clean"]}
+    payload = _task(
+        "review",
+        "Kickoff review: the plans and the layout trees disagree (see `findings`). Revise the plans — submit {plans: {screen: {fields to merge}}, data?: [entities]} — "
+        "or submit {accept: true} to proceed as is (the developers will decide on their own). Revisions are merged into the existing plan files and re-checked.",
+        {"plans": "{screen: {states, interactions, data, components, translations, notes}} — merged into the plan", "data": "optional full entity list for the data task", "accept": "true to proceed unchanged"},
+        findings=findings,
+    )
+    if (payload or {}).get("accept"):
+        return {"phase": "build", "log": ["review:accepted"]}
+    plans = payload.get("plans") if isinstance((payload or {}).get("plans"), dict) else {}
+    for sid, p in plans.items():
+        path = os.path.join(root, PLANS, feature, f"{sid}.yaml")
+        cur = yaml_lite.loads(util.read_text(path, "")) or {}
+        if isinstance(p, dict) and os.path.isfile(path):
+            cur.update(p)
+            util.write_text(path, yaml_lite.dumps(cur))
+    out = {"phase": "review", "log": ["review:revised"]}
+    if isinstance((payload or {}).get("data"), list):
+        prev = (yaml_lite.loads(util.read_text(os.path.join(root, PLANS, feature, "_data.yaml"), "")) or {}).get("entities") or []
+        data = sorted(set(prev) | {str(x) for x in payload["data"] if str(x).strip()})
+        util.write_text(os.path.join(root, PLANS, feature, "_data.yaml"), yaml_lite.dumps({"entities": data}))
+        order = list(s.get("order") or [])
+        if data and not any(t["kind"] == "data" for t in order):
+            ds = [t for t in order if t["kind"] == "ds"]
+            out["order"] = ds + [{"kind": "data", "id": "data"}] + [t for t in order if t["kind"] not in ("ds",)]
+    return out
+
+
+def _after_review(s):
+    return "prepare" if s.get("phase") == "build" else "review"
 
 
 # ─────────────────────────── prepare (결정적) ───────────────────────────
@@ -478,6 +568,15 @@ def n_smoke(s):
     results = {**(s.get("results") or {}), task["id"]: res}
     if ok:
         return {"phase": "merge", "results": results, "smoked": task["id"], "log": [f"smoke:pass:{task['id']}"]}
+    retries = (s.get("retries") or {}).get(task["id"], 0)
+    cls = classify_failure(res, retries)                 # fix 분류 (4장)
+    if cls["kind"] == "retry":
+        return {"phase": "retry", "results": results, "smoked": task["id"], "retries": {**(s.get("retries") or {}), task["id"]: retries + 1},
+                "log": [f"smoke:retry:{task['id']}"]}
+    if cls["kind"] == "blocked":
+        return {"phase": "blocked", "results": results, "smoked": task["id"],
+                "blocked": {"reason": f"{cls['owner']} fix needed", "job": task, "detail": cls["detail"] + "\n재작업으로는 못 고친다 — 고친 뒤 submit({}) 으로 같은 과제를 다시 돈다."},
+                "log": [f"smoke:blocked:{cls['owner']}:{task['id']}"]}
     if (s.get("attempts") or {}).get(task["id"], 0) >= int(cfg["budget"]["attempts_per_screen"]):
         return {"phase": "blocked", "results": results,
                 "blocked": {"reason": "budget exhausted", "job": task, "detail": _rework_text({"results": results}, task["id"])},
@@ -485,8 +584,65 @@ def n_smoke(s):
     return {"phase": "rework", "results": results, "smoked": task["id"], "log": [f"smoke:fail:{task['id']}"]}
 
 
+GENERATED_MARKS = ("Networking/Generated", "networking/generated", "Generated/Tokens", "Fonts.swift", "Fonts.kt", "ContractDecodeTest")
+
+
+def classify_failure(res, retries=0):
+    """fix 분류 — 스모크 실패를 셋으로 가른다: rework(개발자) · retry(흔들림 — 시간 초과, 한 번만 다시 잰다) · blocked(하네스 · 계약 · lead 가 고칠 것).
+    개발자가 고칠 게 하나라도 있으면 rework 이고 나머지 사유는 함께 적는다. → {"kind", "owner", "detail"}"""
+    reasons = []
+    for p, r in (res or {}).items():
+        if not isinstance(r, dict):
+            continue
+        st, b, d, dv, par = (r.get(k) or {} for k in ("static", "build", "contract_decode", "device", "parity"))
+        if st.get("status") == "fail":
+            reasons.append(("rework", "dev", f"[{p}] static: {sorted({v['rule'] for v in st.get('violations') or []})}"))
+        if b.get("status") == "fail":
+            tail, det = b.get("tail") or "", b.get("detail") or ""
+            if any(m in tail for m in GENERATED_MARKS):
+                reasons.append(("blocked", "harness", f"[{p}] the build fails inside generated code ({det}) — the generator or the contract is wrong, not the screen"))
+            elif "시간 초과" in det:
+                reasons.append(("retry", "harness", f"[{p}] build timed out"))
+            else:
+                reasons.append(("rework", "dev", f"[{p}] build: {det}"))
+        if d.get("status") == "fail":
+            det = d.get("detail") or ""
+            if "디코딩 실패" in det:
+                reasons.append(("blocked", "lead", f"[{p}] contract examples do not decode into the generated models ({det}) — fix api/openapi.yaml examples or schemas"))
+            elif "시간" in det:
+                reasons.append(("retry", "harness", f"[{p}] contract decode check timed out"))
+            else:
+                reasons.append(("rework", "dev", f"[{p}] contract decode test could not run ({det}) — the platform build/test setup is broken"))
+        if dv.get("status") == "fail":
+            det = dv.get("detail") or ""
+            if "시간" in det or "timed" in det.lower() or "끝나지 않았다" in det:
+                reasons.append(("retry", "harness", f"[{p}] device: {det}"))
+            else:
+                reasons.append(("rework", "dev", f"[{p}] the app did not stay alive on the device: {det}"))
+        for v in par.get("violations") or []:
+            if v.get("rule") == "T9":
+                reasons.append(("blocked", "harness", f"[both] T9: {v['detail']} — fonts are registered by the harness (twbuild fonts install)"))
+            else:
+                reasons.append(("rework", "dev", f"[both] {v.get('rule')}: {v.get('detail')}"))
+    kinds = {k for k, _, _ in reasons}
+    if "rework" in kinds:
+        kind, owner = "rework", "dev"
+    elif "blocked" in kinds:
+        kind, owner = "blocked", next(o for k, o, _ in reasons if k == "blocked")
+    elif "retry" in kinds:
+        kind, owner = ("retry" if retries < 1 else "rework"), "harness"
+    else:
+        kind, owner = "rework", "dev"
+    seen, lines = set(), []
+    for k, o, d in reasons:
+        if d not in seen:
+            seen.add(d)
+            lines.append(f"- {d} ({k} · {o})")
+    return {"kind": kind, "owner": owner, "detail": "\n".join(lines)}
+
+
 def _after_smoke(s):
-    return {"merge": "merge", "blocked": "blocked"}.get(s.get("phase"), "prepare")
+    return {"merge": "merge", "blocked": "blocked", "retry": "smoke"}.get(s.get("phase"), "prepare")
 
 
 # ─────────────────────────── merge (결정적) ───────────────────────────
@@ -596,18 +752,30 @@ def n_done(s):
     return {"phase": "done", "log": ["done"]}
 
 
+def n_retro(s):
+    """사이클 회고(13장) — 이번 사이클 지표를 이력에 남기고 이전 사이클과 비교한 보고서를 쓴다. 결정적, LLM 없음."""
+    root, feature = s["root"], s["feature"]
+    metrics.close_cycle(root, feature)
+    rep = metrics.retro_markdown(root, feature)
+    util.write_text(os.path.join(root, REPORTS, feature, "_retro.md"), rep)
+    git.commit_paths(root, f"retro({feature}): 사이클 지표 이력", os.path.join(util.TW_DIR, util.METRICS_DIR, metrics.CYCLES_DIR))
+    return {"phase": "done", "log": ["retro"]}
+
+
 def build_cycle():
     g = StateGraph(CycleState)
-    for name, fn in (("intake", n_intake), ("plan", n_plan), ("prepare", n_prepare), ("dispatch", n_dispatch), ("smoke", n_smoke),
-                     ("merge", n_merge), ("blocked", n_blocked), ("done", n_done)):
+    for name, fn in (("intake", n_intake), ("plan", n_plan), ("review", n_review), ("prepare", n_prepare), ("dispatch", n_dispatch), ("smoke", n_smoke),
+                     ("merge", n_merge), ("blocked", n_blocked), ("done", n_done), ("retro", n_retro)):
         g.add_node(name, fn)
     g.add_edge(START, "intake")
     g.add_conditional_edges("intake", _after_intake, {"intake": "intake", "plan": "plan"})
-    g.add_conditional_edges("plan", _after_plan, {"plan": "plan", "prepare": "prepare"})
+    g.add_conditional_edges("plan", _after_plan, {"plan": "plan", "review": "review"})
+    g.add_conditional_edges("review", _after_review, {"review": "review", "prepare": "prepare"})
     g.add_conditional_edges("prepare", _after_prepare, {"dispatch": "dispatch", "blocked": "blocked"})
     g.add_conditional_edges("dispatch", _after_dispatch, {"blocked": "blocked", "smoke": "smoke"})
-    g.add_conditional_edges("smoke", _after_smoke, {"merge": "merge", "blocked": "blocked", "prepare": "prepare"})
+    g.add_conditional_edges("smoke", _after_smoke, {"merge": "merge", "blocked": "blocked", "prepare": "prepare", "smoke": "smoke"})
     g.add_conditional_edges("merge", _after_merge, {"prepare": "prepare", "blocked": "blocked", "done": "done"})
     g.add_edge("blocked", "prepare")
-    g.add_edge("done", END)
+    g.add_edge("done", "retro")
+    g.add_edge("retro", END)
     return g

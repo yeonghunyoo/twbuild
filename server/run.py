@@ -137,6 +137,7 @@ def main():
     ap.add_argument("--build", action="store_true", help="check: 플랫폼 빌드까지")
     ap.add_argument("--compare", action="store_true", help="stats: 기능별 비교 표")
     ap.add_argument("--feature", default=None, help="stats: 기능 하나의 요약")
+    ap.add_argument("--retro", default=None, help="stats: 기능의 회고 보고서")
     a = ap.parse_args()
     root = os.path.abspath(a.root or os.environ.get("TWBUILD_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -163,7 +164,7 @@ def main():
         print(f".env.local 에 키 {len(added)}개를 더했다: {', '.join(added) or '(없음)'}\n에디터로 값을 채운 뒤 `twbuild doctor` 로 확인한다. 값은 채팅으로 보내지 않는다.")
         return 0
     if a.cmd == "stats":
-        print(metrics.compare_table(root) if a.compare else metrics.feature_table(root, a.feature) if a.feature else metrics.stats_table(root))
+        print(metrics.retro_markdown(root, a.retro) if a.retro else metrics.compare_table(root) if a.compare else metrics.feature_table(root, a.feature) if a.feature else metrics.stats_table(root))
         return 0
     if a.cmd == "scan":
         from twbuild import git as g, leaks
