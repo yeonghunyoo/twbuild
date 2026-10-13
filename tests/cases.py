@@ -396,6 +396,17 @@ def design_run_flow():
               and idx["screens"]["mini/sheet"]["status"] == "imported", idx["screens"])
         prev = util.read_json(os.path.join(root, "design/runs/R-0002.json"))
         check(prev["prev_hashes"]["mini/home"] != out["screens"]["mini/home"]["tree"], "이전 해시 기록")
+        # 세 번째 run — lead 가 spec 으로 sheet → mixer 로 이름을 고치면, 네 번째 run(spec 없음)도 그 이름을 이어받는다 (실측: 자동 감지가 되돌렸다)
+        design.start(root, "mini", "P1", ["mini.dc.html"])
+        design.capture(root, "mini.dc.html", changed_html, "e2", "P1")
+        markup, script, _ = tree.split(changed_html)
+        spec3 = [{**sc, "id": "mixer"} if sc["id"] == "sheet" else sc for sc in tree.detect_screens(markup, script)]
+        out = design.finish(root, spec3)
+        check("mini/mixer" in out["screens"] and design.index(root)["screens"]["mini/sheet"]["status"] == "removed", out["screens"].keys())
+        design.start(root, "mini", "P1", ["mini.dc.html"])
+        design.capture(root, "mini.dc.html", changed_html, "e2", "P1")
+        out = design.finish(root)
+        check("mini/mixer" in out["screens"] and "mini/sheet" not in out["screens"] and out["diff"] == {"added": [], "changed": [], "removed": []}, (list(out["screens"]), out["diff"]))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

@@ -304,6 +304,30 @@ def trial(root, text, spec=None):
     return {"screens": specs, "status": out, "frame": frame}
 
 
+def _sig(sc):
+    return (sc.get("kind"), tuple(sc.get("when") or []), tuple(sc.get("style") or []))
+
+
+def last_spec(root, scope, dest):
+    """같은 scope · 같은 화면 파일의 마지막 run 이 쓴 화면 spec — 없으면 None."""
+    d = os.path.join(root, util.DESIGN_DIR, "runs")
+    if not os.path.isdir(d):
+        return None
+    for n in sorted(os.listdir(d), reverse=True):
+        r = util.read_json(os.path.join(d, n), {}) or {}
+        if r.get("scope") == scope and r.get("status") in ("done", "finished") and (r.get("spec") or {}).get(dest):
+            return r["spec"][dest]
+    return None
+
+
+def reconcile_spec(detected, stored):
+    """자동 감지 결과에 이전 run 의 화면 이름을 입힌다 — 같은 분기(kind · when · style)면 이전 id. 새 분기는 감지된 id 그대로."""
+    if not stored:
+        return detected
+    by_sig = {_sig(s): s for s in stored}
+    return [{**d, "id": by_sig[_sig(d)]["id"]} if _sig(d) in by_sig else d for d in detected]
+
+
 def finish(root, spec=None, commit=True):
     """run 을 닫는다 — 트리 · 토큰 생성, 원장 갱신, run 기록, 커밋 + 태그. spec: lead 가 확인한 화면 목록(없으면 자동 감지)."""
     run = active(root)
@@ -320,7 +344,8 @@ def finish(root, spec=None, commit=True):
             continue
         text = util.read_text(os.path.join(root, f["dest"]), "")
         markup, script, frame = tree.split(text)
-        specs = spec or tree.detect_screens(markup, script)
+        specs = spec or reconcile_spec(tree.detect_screens(markup, script), last_spec(root, run["scope"], f["dest"]))
+        run.setdefault("spec", {})[f["dest"]] = specs        # lead 가 고친 화면 이름은 다음 run 이 이어받는다 (실측: 자동 감지가 mixer 를 sheet 로 되돌렸다)
         for sc in specs:
             lay = tree.layout(markup, sc, specs, tm, source=f["dest"], frame=frame)
             rel = os.path.join(util.DESIGN_DIR, run["scope"], "layout", f"{sc['id']}.json")
