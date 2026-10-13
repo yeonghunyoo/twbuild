@@ -561,7 +561,7 @@ def cycle_graph_end_to_end():
         check(os.path.isfile(os.path.join(root, ".twbuild/reports/mini/home.md")) and "D-01" in util.read_text(os.path.join(root, ".twbuild/reports/mini/home.md")), "보고서에 결정")
         res = util.read_json(os.path.join(root, ".twbuild/results/mini/home.json"))
         check(res["pass"] and res["results"]["ios"]["static"]["status"] == "pass" and res["results"]["ios"]["static"]["violations"] == [], res["results"]["ios"]["static"])
-        # stats: android 가 blocked → blocked 멈춤 → submit({}) → 다시 배차 (attempt 2)
+        # stats: android 가 blocked → blocked 멈춤 → submit({}) → 다시 배차 — 스모크까지 못 간 배차는 시도로 세지 않는다 (attempt 1 그대로)
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "blocked", "summary": "needs shared component"}})
         p = out["pending"]
         check(p["kind"] == "blocked" and p["reason"] == "developer blocked" and "BLOCKED" in out["message"], out.get("message"))
@@ -569,7 +569,7 @@ def cycle_graph_end_to_end():
         check("blocked" in st["message"], st["message"])
         out = router.submit(root, {})
         p = out["pending"]
-        check(p["task"] == "build" and p["attempt"] == 2 and p["job"]["id"] == "stats", out.get("message"))
+        check(p["task"] == "build" and p["attempt"] == 1 and p["job"]["id"] == "stats", out.get("message"))
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         p = out["pending"]
         check(p["task"] == "build" and "sheet" in p["prompts"]["android"], out.get("message"))

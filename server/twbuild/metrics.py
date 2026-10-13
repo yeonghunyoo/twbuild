@@ -168,10 +168,10 @@ def screens_table(root):
     if not rows:
         return ""
     lines = ["", "화면 · 플랫폼 (smoke · 개발자 과제)",
-             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'기기':>5}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
+             f"  {'과제':<12}{'플랫폼':<9}{'배차':>4}{'스모크':>5}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 합':>8}{'기기':>5}{'통과':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
     for (task, plat), r in sorted(rows.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
         viol = ",".join(sorted(set(r["violations"]))) or "-"
-        lines.append(f"  {str(task):<12}{str(plat):<9}{r['attempts']:>4}{r['static_fail']:>8}{r['build_fail']:>8}{_fmt_ms(r['build_ms'] or None):>9}{_mark(r['device']):>5}{'✅' if r['passed'] else '—':>5}"
+        lines.append(f"  {str(task):<12}{str(plat):<9}{(r['agents'] or '-'):>4}{r['attempts']:>5}{r['static_fail']:>8}{r['build_fail']:>8}{_fmt_ms(r['build_ms'] or None):>8}{_mark(r['device']):>5}{'✅' if r['passed'] else '—':>5}"
                      f"{_fmt_ms(r['ms'] if r['agents'] else None):>10}{(r['tokens'] or '-'):>9}  {viol}")
     return "\n".join(lines)
 
@@ -204,8 +204,9 @@ def feature_summary(root, feature):
     for (tid, plat), r in rows.items():
         if tid not in screens and tid not in ("data", "ds"):
             continue
-        t = tasks.setdefault(tid, {"attempts": 0, "first_try": True, "passed": True, "platforms": {}})
-        t["attempts"] = max(t["attempts"], r["attempts"])
+        t = tasks.setdefault(tid, {"attempts": 0, "dispatches": 0, "first_try": True, "passed": True, "platforms": {}})
+        t["attempts"] = max(t["attempts"], r["attempts"])            # 스모크 횟수
+        t["dispatches"] = max(t["dispatches"], r["agents"])           # 배차 횟수(에이전트 측정이 있을 때만)
         t["first_try"] = t["first_try"] and bool(r["first_try"])
         t["passed"] = t["passed"] and r["passed"]
         t["platforms"][plat] = {k: r[k] for k in ("attempts", "static_fail", "build_fail", "build_ms", "device", "device_ms", "ms", "tokens", "agents")}
@@ -224,7 +225,8 @@ def feature_summary(root, feature):
     out = {"feature": feature, "t": util.now(), "ver": {**util.plugin_version(), "config": config.digest(config.load(root))},
            "screens": screens, "tree_nodes": tree_nodes, "tasks": tasks, "nodes": nodes,
            "first_try_pass_rate": (sum(1 for t in done if t["first_try"]) / len(done)) if done else None,
-           "attempts_per_task": (sum(t["attempts"] for t in tasks.values()) / len(tasks)) if tasks else None,
+           "attempts_per_task": (sum(t["attempts"] for t in tasks.values()) / len(tasks)) if tasks else None,        # 스모크/과제
+           "dispatches_per_task": (sum(t["dispatches"] for t in tasks.values()) / len(tasks)) if tasks else None,
            "build_ms": sum(p["build_ms"] for t in tasks.values() for p in t["platforms"].values()),
            "agent_ms": agent_ms if measured_agents else None, "tokens": tokens if measured_agents else None,
            "per_node": {"agent_ms": (agent_ms / tree_nodes) if (measured_agents and tree_nodes) else None,
@@ -271,7 +273,7 @@ def compare_table(root):
     if not ss:
         return "기능별 요약이 없다 — 머지가 한 번 끝나면 .twbuild/metrics/cycles/ 에 쌓인다."
     lines = ["기능별 비교 (merge 요약 · 노드당 정규화)",
-             f"  {'기능':<12}{'화면':>4}{'노드':>5}{'첫시도 통과':>10}{'시도/과제':>9}{'빌드 합':>9}{'개발자/노드':>11}{'토큰/노드':>10}  버전"]
+             f"  {'기능':<12}{'화면':>4}{'노드':>5}{'첫시도 통과':>10}{'스모크/과제':>10}{'빌드 합':>9}{'개발자/노드':>11}{'토큰/노드':>10}  버전"]
     for s in ss:
         pn = s.get("per_node") or {}
         ver = s.get("ver") or {}
@@ -289,10 +291,10 @@ def feature_table(root, feature):
     d = s.get("decisions") or {}
     lines = [f"{feature} — 화면 {len(s.get('screens') or [])}개 · 트리 노드 {s.get('tree_nodes')}개 · 첫 시도 통과 {_rate(s.get('first_try_pass_rate'))} · "
              f"결정 {d.get('total', 0)}(확정 {d.get('confirmed', 0)} · 잠정 {d.get('tentative', 0)}) · {s.get('ver', {}).get('plugin', '?')}@{s.get('ver', {}).get('commit', '?')}",
-             f"  {'과제':<12}{'플랫폼':<9}{'시도':>4}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 시간':>9}{'기기':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
+             f"  {'과제':<12}{'플랫폼':<9}{'배차':>4}{'스모크':>5}{'정적 실패':>8}{'빌드 실패':>8}{'빌드 합':>8}{'기기':>5}{'개발자 시간':>10}{'토큰':>9}  위반"]
     for tid, t in sorted((s.get("tasks") or {}).items()):
         for plat, p in sorted(t["platforms"].items()):
-            lines.append(f"  {tid:<12}{plat:<9}{p['attempts']:>4}{p['static_fail']:>8}{p['build_fail']:>8}{_fmt_ms(p['build_ms'] or None):>9}{_mark(p.get('device')):>5}"
+            lines.append(f"  {tid:<12}{plat:<9}{(p['agents'] or '-'):>4}{p['attempts']:>5}{p['static_fail']:>8}{p['build_fail']:>8}{_fmt_ms(p['build_ms'] or None):>8}{_mark(p.get('device')):>5}"
                          f"{_fmt_ms(p['ms'] if p['agents'] else None):>10}{(p['tokens'] or '-'):>9}  {','.join(p.get('violations') or []) or '-'}")
     u = s.get("unmeasured") or {}
     lines.append(f"  못 잼: 개발자 과제 {u.get('agents', 0)} · 빌드 {u.get('builds', 0)}")

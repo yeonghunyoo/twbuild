@@ -249,7 +249,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
     if decs:
         L += ["", "## Team decisions (binding)"] + [f"- {d['id']} [{d['status']}] `{d['topic']}` — {d['text']} (by {d['by']})" for d in decs]
     if rework:
-        L += ["", "## Rework — the previous attempt failed the gate", rework]
+        L += ["", "## Rework — the previous attempt failed the gate", "(Measured before any harness fix since then — run `twbuild check` first; if it is clean and the build passes, finish without changing code.)", rework]
     L += ["", "## Finish",
           f"- Write a short task note to `.twbuild/tasks/{task['id']}-{platform}.md` (inside the worktree; git-ignored — do NOT force-add it, the harness collects it at merge): what you did, what you decided (D-ids), what is uncertain, build result.",
           "- Everything committed in the worktree. Then end with a one-paragraph summary: status (done|blocked), commits, note path, open questions.",
@@ -491,7 +491,8 @@ def evidence(root, feature, task, s, commits):
         return "✅" if st == "pass" else ("❌" if st == "fail" else "— 못 잼")
     for layer in ("static", "build", "parity", "device", "contract_decode"):
         L.append(f"| {layer} | {m((res.get('ios') or {}).get(layer))} | {m((res.get('android') or {}).get(layer))} |")
-    decs = [d for d in decide.ledger(root)["decisions"] if d.get("screen") == task["id"] and d["status"] != "flipped"]
+    sid_rx = re.compile(rf"(^|\.){re.escape(task['id'])}(\.|$)")           # n.sound.* 뿐 아니라 data.sound.readonly · nav.sound.* 도 이 화면의 결정이다
+    decs = [d for d in decide.ledger(root)["decisions"] if (d.get("screen") == task["id"] or sid_rx.search(d.get("topic") or "")) and d["status"] != "flipped"]
     if decs:
         L += ["", "적용된 결정: " + ", ".join(f"{d['id']}({d['status']})" for d in decs)]
     L += ["", f"되돌리기: `git revert {' '.join(c[:7] for c in commits.values() if c)}`"]
@@ -570,8 +571,12 @@ def n_blocked(s):
     b = s.get("blocked") or {}
     interrupt({"kind": "blocked", "graph": "cycle", "reason": b.get("reason"), "detail": b.get("detail"), "job": b.get("job"),
                "message": "Blocked. Show the user what blocks (Korean) and what must be done. When it is resolved, call submit({}) to retry the task."})
-    return {"phase": "build", "blocked": None, "attempts": {**(s.get("attempts") or {}), **({b["job"]["id"]: 0} if b.get("job") and b.get("reason") == "budget exhausted" else {})},
-            "log": ["blocked:resume"]}
+    attempts = dict(s.get("attempts") or {})
+    if b.get("job"):
+        jid = b["job"]["id"]
+        # 하네스 · 사람 원인 멈춤(개발자 blocked · 머지 충돌 · 시크릿 …)은 시도로 세지 않는다 — 그 배차는 스모크까지 못 갔다. 예산 소진은 0 으로 되돌린다 (실측: 하네스 버그로 2회가 깎였다)
+        attempts[jid] = 0 if b.get("reason") == "budget exhausted" else max(0, attempts.get(jid, 0) - 1)
+    return {"phase": "build", "blocked": None, "attempts": attempts, "log": ["blocked:resume"]}
 
 
 def n_done(s):
