@@ -135,10 +135,12 @@ def _mark(status):
     return {"pass": "✅", "fail": "❌", None: "-"}.get(status, "못 잼")
 
 
-def screen_rows(root, feature=None):
+def screen_rows(root, feature=None, since=None):
     """(과제, 플랫폼) → 시도 · 정적/빌드 실패 · 빌드 시간 · 개발자 시간 · 토큰. feature 를 주면 그 기능의 이벤트만(기능이 없는 옛 기록은 포함)."""
     rows = {}
     for e in events(root):
+        if since and (e.get("t") or "") < since:          # 사이클 범위 (retro)
+            continue
         if feature and e.get("feature") and e.get("feature") != feature:
             continue
         if e.get("ev") == "smoke":
@@ -187,7 +189,7 @@ def _count_nodes(n):
     return 1 + sum(_count_nodes(c) for c in n.get("children") or [])
 
 
-def feature_summary(root, feature, only=None):
+def feature_summary(root, feature, only=None, since=None):
     """기능 하나의 측정 요약 — 화면 · 트리 노드 수 · 과제별 시도 · 첫 시도 통과율 · 빌드 · 개발자 시간 · 토큰(노드당) · 결정 수. 경로 없음 · 마스킹."""
     from . import decide, design, leaks
     idx = design.index(root)
@@ -199,7 +201,7 @@ def feature_summary(root, feature, only=None):
         screens.append(sid)
         lay = util.read_json(os.path.join(root, v.get("layout") or ""), {}) if v.get("layout") else {}
         tree_nodes += _count_nodes((lay or {}).get("root") or (lay or {}).get("tree") or lay)
-    rows = screen_rows(root, feature)
+    rows = screen_rows(root, feature, since)
     tasks = {}
     for (tid, plat), r in rows.items():
         if tid not in screens and tid not in ("data", "ds"):
@@ -260,10 +262,10 @@ def history(root, feature):
     return util.read_json(os.path.join(_dir(root), CYCLES_DIR, f"{feature}{HISTORY}"), []) or []
 
 
-def close_cycle(root, feature, tasks=None):
+def close_cycle(root, feature, tasks=None, since=None):
     """사이클이 끝났다 — 이 사이클 과제(tasks)만의 숫자를 이력에 한 줄 보탠다(retro 가 이전 사이클과 비교한다). 같은 사이클을 두 번 닫지 않는다.
     tasks 가 없으면 기능 전체(누적) — 실측: 누적치가 사이클 회고로 보여 헷갈렸다."""
-    s = feature_summary(root, feature, set(tasks) if tasks else None)
+    s = feature_summary(root, feature, set(tasks) if tasks else None, since)
     hist = history(root, feature)
     snap = {"n": len(hist) + 1, "t": s["t"], "ver": s["ver"], "tasks": len(s["tasks"]), "task_ids": sorted(s["tasks"]), "tree_nodes": s["tree_nodes"],
             "first_try_pass_rate": s["first_try_pass_rate"], "attempts_per_task": s["attempts_per_task"], "dispatches_per_task": s.get("dispatches_per_task"),
@@ -297,7 +299,7 @@ def retro_markdown(root, feature):
          f"- 첫 시도 통과율: {_delta(cur['first_try_pass_rate'], g('first_try_pass_rate'), _rate, lower_is_better=False)}",
          f"- 스모크/과제: {_delta(cur['attempts_per_task'], g('attempts_per_task'), lambda x: _num(x, '{:.1f}'))} · 배차/과제: {_delta(cur.get('dispatches_per_task'), g('dispatches_per_task'), lambda x: _num(x, '{:.1f}'))}",
          f"- 빌드 합: {_delta(cur['build_ms'], g('build_ms'), lambda x: _fmt_ms(x or None))} · 개발자/노드: {_delta(pn.get('agent_ms'), ppn.get('agent_ms'), _fmt_ms)} · 토큰/노드: {_delta(pn.get('tokens'), ppn.get('tokens'), _num)}",
-         f"- 결정: {cur['decisions'].get('total', 0)}(확정 {cur['decisions'].get('confirmed', 0)} · 잠정 {cur['decisions'].get('tentative', 0)})",
+         f"- 결정(기능 누적): {cur['decisions'].get('total', 0)}(확정 {cur['decisions'].get('confirmed', 0)} · 잠정 {cur['decisions'].get('tentative', 0)} · 뒤집힘/폐기 {cur['decisions'].get('flipped', 0)})",
          f"- 못 잼: 개발자 과제 {cur['unmeasured'].get('agents', 0)} · 빌드 {cur['unmeasured'].get('builds', 0)}"]
     if cur.get("violations"):
         L += ["", "## 재작업 원인 (규칙)", ""] + [f"- {v}" for v in cur["violations"]]
@@ -346,7 +348,7 @@ def compare_table(root):
     ss = summaries(root)
     if not ss:
         return "기능별 요약이 없다 — 머지가 한 번 끝나면 .twbuild/metrics/cycles/ 에 쌓인다."
-    lines = ["기능별 비교 (merge 요약 · 노드당 정규화)",
+    lines = ["기능별 비교 (merge 요약 = 기능 누적 · 노드당 정규화; 사이클별은 stats --retro)",
              f"  {'기능':<12}{'화면':>4}{'노드':>5}{'첫시도 통과':>10}{'스모크/과제':>10}{'빌드 합':>9}{'개발자/노드':>11}{'토큰/노드':>10}  버전"]
     for s in ss:
         pn = s.get("per_node") or {}

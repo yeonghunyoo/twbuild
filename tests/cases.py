@@ -234,6 +234,8 @@ def guard_hook():
         allow("Bash", {"command": "ls apps 2>/dev/null; xcodebuild -list > /dev/null"})
         allow("Write", {"file_path": os.path.expanduser("~/.claude/projects/-x-y/memory/note.md"), "content": "x"})
         allow("Bash", {"command": "cat > .twbuild/tasks/home-ios.md <<'EOF'\n# home — ios\n- did: touch targets; see design/mini/mini.dc.html and api/openapi.yaml\nEOF"}, cwd=os.path.join(root, ".twbuild", "worktrees", "ios-home"))
+        allow("Bash", {"command": "mkdir -p .twbuild/tasks && cat > .twbuild/tasks/home-ios.md <<'EOF'\n# home\nEOF"}, cwd=os.path.join(root, ".twbuild", "worktrees", "ios-home"))
+        deny("Bash", {"command": "mkdir -p .twbuild/plans/x"}, "H4")
         deny("Bash", {"command": "cat id_rsa"}, "H5")
         deny("Bash", {"command": "cp secrets.json /tmp/"}, "H5")
         # H8 — 메인 세션은 apps/ 를 쓰지 않는다; 개발자(agent_id)는 쓴다; config lead.edit_apps 로 해제
@@ -798,6 +800,12 @@ def redo_merged_screen_keeps_code():
         wt, _ = git.ensure_worktree(root, "ios-home")
         again = cycle._draft_into(root, wt, lay, "mini", "ios", vars_)
         check(again == [] and "// developer code" in util.read_text(f), again)
+        # 재오픈 화면의 결정은 review 가 lead 에게 짚는다
+        from twbuild import decide
+        design.set_status(root, "mini/home", "consumed")
+        decide.record(root, "n.home.column0.text1", "no navigation yet — TODO", "ios")
+        fs = cycle.review_findings(root, "mini", {"order": [{"kind": "screen", "id": "home"}]})
+        check(any("re-opened" in x and "D-01" in x for x in fs), fs)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

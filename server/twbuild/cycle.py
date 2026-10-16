@@ -39,6 +39,7 @@ class CycleState(TypedDict, total=False):
     blocked: dict
     retries: dict        # id → 스모크 재측정 횟수 (fix 분류: 흔들림)
     review: dict         # 킥오프 검토 결과 — 첫 배차 과제에 실린다
+    started: str         # 사이클 시작(intake 제출) — retro 가 이 뒤 이벤트만 센다
     log: Annotated[list, operator.add]
 
 
@@ -72,7 +73,7 @@ def n_intake(s):
         util.write_text(os.path.join(root, util.FEATURES_DIR, feature, "brief.md"), f"# {feature}\n\n{str(payload['brief']).strip()}\n")
     want = payload.get("screens") if isinstance(payload.get("screens"), list) and payload.get("screens") else [k.split("/", 1)[1] for k in keys]
     return {"phase": "plan", "feature": feature, "screens": [str(x) for x in want], "order": [], "cursor": 0, "attempts": {}, "results": {},
-            "dev": {}, "reports": [], "blocked": None, "retries": {}, "log": [f"intake:{feature}"]}
+            "dev": {}, "reports": [], "blocked": None, "retries": {}, "started": util.now(), "log": [f"intake:{feature}"]}
 
 
 def _after_intake(s):
@@ -225,6 +226,12 @@ def review_findings(root, feature, s):
         for d in plan.get("data") or []:
             if str(d).lower() not in known:
                 out.append(f"{sid}: data `{d}` is neither in the data task {ents} nor an existing data object — add it to `data` or name the existing one")
+        if (design.index(root)["screens"].get(f"{feature}/{sid}") or {}).get("status") == "consumed":      # 재오픈 — 그 화면의 확정 결정이 이번 brief 와 맞는지 lead 가 본다 (실측: TODO 결정이 binding 으로 주입됐다)
+            rx = re.compile(rf"(^|\.){re.escape(sid)}(\.|$)")
+            decs = [d for d in decide.ledger(root)["decisions"] if d["status"] != "flipped" and (d.get("screen") == sid or rx.search(d.get("topic") or ""))]
+            if decs:
+                out.append(f"{sid}: re-opened screen — these decisions are injected as binding: {', '.join(d['id'] + ' ' + d['topic'] for d in decs)}. "
+                           "Flip or discard any that the brief contradicts (twbuild decide flip|discard) before accepting")
         for ref in st.get("screen_refs") or []:
             j = next((k for k, u in enumerate(order) if u["id"] == ref), None)
             if j is not None and j > i:
@@ -321,7 +328,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
     if task["kind"] == "screen":
         sid = task["id"]
         L += [f"- Layout tree (STRUCTURE, 1:1): `design/{feature}/layout/{sid}.json` — nesting, order, `if`, `list`, handlers and node ids are binding. No merging, dropping, reordering or extra containers.",
-              f"- Plan: `.twbuild/plans/{feature}/{sid}.yaml` (states · interactions · data · translations).",
+              f"- Plan: `{os.path.join(root, PLANS, feature, sid + '.yaml')}` (states · interactions · data · translations) — in the MAIN repo; `.twbuild/` is not in your worktree.",
               f"- Design source (for look only): `design/{feature}/` · tokens `design/ds/tokens.json` → generated `Tokens.*` constants.",
               f"- Fonts (generated, registered on both platforms — never add font files yourself, gate T9): iOS `FontFamily.heading` / `FontFamily.body` + `FontFamily.font(…)` in `App/Core/DesignSystem/Fonts.swift`; Android `FontFamilies.heading` / `FontFamilies.body` in `core/designsystem/Fonts.kt`. CSS `var(--font-heading)` → those; if the file is missing the fonts were not fetched — fall back to system fonts and say so in your note.",
               (f"- Structure draft (already committed as `draft({sid})`): {', '.join(drafted)}. It compiles; it is yours now." if drafted else
@@ -329,7 +336,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
         L += ["", "## What to do",
               "1. Translate every `// style:` comment into native styling using your translate skill. Values that match a token use the `Tokens.*` constant; other values come from the tree as written. Never invent colors/sizes that are not in the tree.",
               "2. Implement the ViewModel: Action → new UiState. Wire data through the container's repositories/stores (data task output, if any). Navigation goes through Route/Router.",
-              "3. Icons: an icon whose tree node has svg data is GENERATED for both platforms (iOS `TwIconView(.icXxx, size:)` · Android `Icon(TwIcons.icXxx, …)`, already in the draft) — keep the call, tint it with the design color, never redraw or swap it (gate T11). Only icons without path data need the closest SF Symbol / Material icon.",
+              "3. Icons: an icon whose tree node has svg data is GENERATED for both platforms (iOS `TwIconView(.icXxx, size:)` · Android `Icon(TwIcons.icXxx, …)` — the names are in `App/Core/DesignSystem/Generated/Icons.swift` / `core/designsystem/generated/Icons.kt`; the draft already calls them, and on a re-opened screen you replace any hand-drawn icon with that call) — tint it with the design color, never redraw or swap it (gate T11). Only icons without path data need the closest SF Symbol / Material icon.",
               "4. Keep every accessibility identifier / test tag exactly as in the tree. Keep UiState field names, Action names and Route names as generated (the gate compares both platforms).",
               "5. Run `twbuild check` (the static gate T1~T6 for your screen, parity when the other worktree exists; `--build` adds the platform build) and the platform build from your playbook until both are clean. Commit in small steps; finish with a commit.",
               "6. If a CSS → native translation is ambiguous for a node, record it: `twbuild decide <node id> \"<your interpretation>\" --by " + platform + "`. If a decision for that node already exists, follow it.",
@@ -354,7 +361,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
     if rework:
         L += ["", "## Rework — the previous attempt failed the gate", "(Measured before any harness fix since then — run `twbuild check` first; if it is clean and the build passes, finish without changing code.)", rework]
     L += ["", "## Finish",
-          f"- Write a short task note to `.twbuild/tasks/{task['id']}-{platform}.md` (inside the worktree; git-ignored — do NOT force-add it, the harness collects it at merge): what you did, what you decided (D-ids), what is uncertain, build result.",
+          f"- Write a short task note to `.twbuild/tasks/{task['id']}-{platform}.md` with the Write tool (inside the worktree; git-ignored — do NOT force-add it, the harness collects it at merge): what you did, what you decided (D-ids), what is uncertain, build result.",
           "- Everything committed in the worktree. Then end with a one-paragraph summary: status (done|blocked), commits, note path, open questions.",
           "- Never run git push, never edit files outside your worktree/platform, never read .env* or keys (hooks block these anyway)."]
     return "\n".join(L)
@@ -776,7 +783,7 @@ def n_done(s):
 def n_retro(s):
     """사이클 회고(13장) — 이번 사이클 지표를 이력에 남기고 이전 사이클과 비교한 보고서를 쓴다. 결정적, LLM 없음."""
     root, feature = s["root"], s["feature"]
-    metrics.close_cycle(root, feature, [t["id"] for t in s.get("order") or []])
+    metrics.close_cycle(root, feature, [t["id"] for t in s.get("order") or []], since=s.get("started"))
     rep = metrics.retro_markdown(root, feature)
     util.write_text(os.path.join(root, REPORTS, feature, "_retro.md"), rep)
     git.commit_paths(root, f"retro({feature}): 사이클 지표 이력", os.path.join(util.TW_DIR, util.METRICS_DIR, metrics.CYCLES_DIR))

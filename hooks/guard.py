@@ -111,7 +111,7 @@ def rel_of(root, path, cwd):
 
 def protected(rel):
     if rel == TW or rel.startswith(TW + "/"):
-        return not any(rel.startswith(w) for w in TW_WRITABLE)
+        return not any(rel.startswith(w) or rel == w.rstrip("/") for w in TW_WRITABLE)      # mkdir -p .twbuild/tasks 도 허용 (실측: 과제 메모가 H4 에 막혔다)
     return any(rel == p.rstrip("/") or rel.startswith(p) for p in PROTECTED) or bool(GENERATED_RE.search(rel))
 
 
