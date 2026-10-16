@@ -213,7 +213,8 @@ def changed_keys(root, cfg=None):
     a = applied(root)
     if not a.get("config"):
         return []
-    return config.diff_keys(a["config"], cfg or config.load(root))
+    base = config._merge(config.DEFAULTS, a["config"])          # 플러그인이 새 기본 키를 더해도 "설정 변경" 이 아니다 (실측: lead.edit_apps 가 셋업을 다시 돌리려 했다)
+    return config.diff_keys(base, cfg or config.load(root))
 
 
 def probe(root):
