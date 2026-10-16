@@ -53,6 +53,7 @@ GUIDE = {
     "H5": "[H5] 민감 파일 · 환경 변수 전체는 읽지도 쓰지도 않는다 — 값이 필요하면 이름만 printenv NAME, 있는지만 [ -n \"$NAME\" ].",
     "H6": "[H6] 설치 · 권한 상승은 사람이 한다 — report 의 사람 할 일 명령을 안내하고 placeholder 로 진행한다.",
     "H7": "[H7] Claude Design 은 읽기 전용이다 — 디자인 수정은 사용자가 Claude Design 에서 한다.",
+    "H8": "[H8] lead(메인 세션)는 플랫폼 코드를 쓰지 않는다 — 화면 · 데이터는 개발자 과제로 보낸다. 꼭 필요하면 .twbuild/config.yaml 에 lead: {edit_apps: true}.",
 }
 
 
@@ -121,7 +122,7 @@ PATHLIKE = re.compile(r"[/.~$]")
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n[\s\S]*?\n\s*\1\b")     # 히어독 본문(과제 메모 · 커밋 본문) = 자연어 — 경로 · 명령으로 보지 않는다
 
 
-def check_bash(cmd, root, cwd):
+def check_bash(cmd, root, cwd, agent_id=None):
     cmd = HEREDOC.sub("<<EOF\nEOF", cmd)
     cmd = QUOTED_TEXT.sub('""', cmd)
     if PUSH.search(cmd):
@@ -155,6 +156,8 @@ def check_bash(cmd, root, cwd):
             continue
         if protected(rel):
             deny(GUIDE["H4"] + f" ({rel})")
+        if mutating or REDIRECT.search(cmd):
+            check_lead_isolation(rel, root, agent_id)
     if DELETE.search(cmd):
         for tk in tokens:
             rel = rel_of(root, tk, cwd)
@@ -162,7 +165,23 @@ def check_bash(cmd, root, cwd):
                 deny(GUIDE["H4"] + " (레포 루트 삭제)")
 
 
-def check_path_tool(tool, path, root, cwd):
+def lead_may_edit_apps(root):
+    """config `lead: {edit_apps: true}` — 메인 세션 격리 해제 스위치 (파서 없이 문자열로 본다)."""
+    try:
+        with open(os.path.join(root, TW, "config.yaml"), encoding="utf-8") as f:
+            return re.search(r"edit_apps:\s*true", f.read()) is not None
+    except OSError:
+        return False
+
+
+def check_lead_isolation(rel, root, agent_id):
+    """H8 — 메인 세션(agent_id 없음)이 apps/ 아래를 쓰면 막는다 (7장: lead 는 플랫폼 코드를 안 쓴다)."""
+    if agent_id or not rel or not rel.replace(os.sep, "/").startswith("apps/") or lead_may_edit_apps(root):
+        return
+    deny(GUIDE["H8"] + f" ({rel})")
+
+
+def check_path_tool(tool, path, root, cwd, agent_id=None):
     ap = os.path.normpath(expand(path) if os.path.isabs(expand(path)) else os.path.join(cwd, path))
     if SENSITIVE_DIR.search(ap.replace(os.sep, "/")) or is_sensitive(ap.replace(os.sep, "/")):
         deny(GUIDE["H5"] + f" ({path})")
@@ -175,6 +194,7 @@ def check_path_tool(tool, path, root, cwd):
         return
     if protected(rel):
         deny(GUIDE["H4"] + f" ({rel})")
+    check_lead_isolation(rel, root, agent_id)
 
 
 def main():
@@ -188,13 +208,13 @@ def main():
     if not root:
         return
     if tool == "Bash":
-        check_bash(inp.get("command", ""), root, cwd)
+        check_bash(inp.get("command", ""), root, cwd, data.get("agent_id"))
         return
     if tool not in FILE_TOOLS:          # MCP 도구의 path 는 로컬 파일이 아니다 — 여기서 판단하지 않는다
         return
     path = inp.get("file_path") or inp.get("path") or inp.get("notebook_path")
     if path:
-        check_path_tool(tool, path, root, cwd)
+        check_path_tool(tool, path, root, cwd, data.get("agent_id"))
 
 
 if __name__ == "__main__":

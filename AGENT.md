@@ -219,7 +219,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 값은 `.env.local`(gitignore). `twbuild init` 이 묻고, `twbuild doctor` 가 ✅/❌.
 - 시크릿 · 개인정보는 pre-commit 훅(wire 가 `.git/hooks/pre-commit` 에 설치 — 워크트리 공용, `twbuild scan --staged`; 다른 훅이 있으면 두고 doctor 가 알린다) · 머지 전 브랜치가 바꾼 파일 전부 검사(걸리면 `blocked`, 사람이 지운다)로 막고, 채팅 출력은 마스킹. 계약 · 디자인 · 문서 경로와 `example` 이 있는 줄은 일반 규칙(assignment)을 안 본다(응답 예시). 값은 앞 3글자만 보인다.
 - 권한은 **욜로(bypass) 모드를 권한다** — 단, 프로젝트 설정(`.claude/settings*.json`)으로는 켤 수 없다(Claude Code 2.1.257+). 사용자 설정(`~/.claude/settings.json` permissions.defaultMode) 또는 `claude --permission-mode bypassPermissions` 로 켜고, 서브에이전트는 메인 세션 모드를 물려받는다. wire 는 프로젝트 settings 에 하네스 명령 허용 목록과 거부 목록만 더하고, doctor · report 가 켜는 법을 안내한다.
-  확인 창이 없으므로 위험 동작은 PreToolUse 훅(`hooks/guard.py`)이 **차단**한다(경보 아님, 거부 사유는 규칙 ID): H1 원격 push · H2 git 이력 재작성 · H3 레포 밖 쓰기 · H4 보호 구역(design/ · api/generated · api/fragments · .twbuild/ · `Networking/Generated`) · H5 민감 파일 · 환경 변수 덤프 · H6 설치 · 권한 상승 · H7 Claude Design 쓰기.
+  확인 창이 없으므로 위험 동작은 PreToolUse 훅(`hooks/guard.py`)이 **차단**한다(경보 아님, 거부 사유는 규칙 ID): H1 원격 push · H2 git 이력 재작성 · H3 레포 밖 쓰기 · H4 보호 구역(design/ · api/generated · api/fragments · .twbuild/ · `Networking/Generated`) · H5 민감 파일 · 환경 변수 덤프 · H6 설치 · 권한 상승 · H7 Claude Design 쓰기 · H8 메인 세션(lead)의 `apps/` 쓰기(7장 — 플랫폼 코드는 개발자 몫; config `lead.edit_apps: true` 로 해제).
   doctor 는 그 외에 워크스페이스 신뢰(`~/.claude.json` — 헤드리스 세션은 미신뢰 레포의 allow 목록을 무시한다) · pre-commit 훅 · 기기 · 공개 스킬 설치를 보인다(막지는 않는다).
 
 ## 12. 언어

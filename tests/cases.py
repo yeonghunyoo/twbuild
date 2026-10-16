@@ -206,8 +206,8 @@ def env_init_and_doctor():
 
 # ─────────────────────────── 훅 ───────────────────────────
 
-def _guard(root, tool, inp, cwd=None):
-    data = {"tool_name": tool, "tool_input": inp, "cwd": cwd or root, "hook_event_name": "PreToolUse"}
+def _guard(root, tool, inp, cwd=None, agent_id=None):
+    data = {"tool_name": tool, "tool_input": inp, "cwd": cwd or root, "hook_event_name": "PreToolUse", **({"agent_id": agent_id} if agent_id else {})}
     r = subprocess.run([sys.executable, os.path.join(PLUGIN, "hooks", "guard.py")], input=json.dumps(data), capture_output=True, text=True)
     if not r.stdout.strip():
         return None
@@ -236,6 +236,14 @@ def guard_hook():
         allow("Bash", {"command": "cat > .twbuild/tasks/home-ios.md <<'EOF'\n# home — ios\n- did: touch targets; see design/mini/mini.dc.html and api/openapi.yaml\nEOF"}, cwd=os.path.join(root, ".twbuild", "worktrees", "ios-home"))
         deny("Bash", {"command": "cat id_rsa"}, "H5")
         deny("Bash", {"command": "cp secrets.json /tmp/"}, "H5")
+        # H8 — 메인 세션은 apps/ 를 쓰지 않는다; 개발자(agent_id)는 쓴다; config lead.edit_apps 로 해제
+        deny("Write", {"file_path": os.path.join(root, "apps/ios/App/X.swift"), "content": "x"}, "H8")
+        deny("Bash", {"command": "sed -i '' s/a/b/ apps/android/app/build.gradle.kts"}, "H8")
+        allow("Write", {"file_path": os.path.join(root, "apps/ios/App/X.swift"), "content": "x"}, agent_id="dev-1")
+        allow("Read", {"file_path": os.path.join(root, "apps/ios/App/X.swift")})
+        allow("Write", {"file_path": os.path.join(root, "features/mini/brief.md"), "content": "x"})
+        util.write_text(os.path.join(root, ".twbuild/config.yaml"), util.read_text(os.path.join(root, ".twbuild/config.yaml")).replace("edit_apps: false", "edit_apps: true"))
+        allow("Write", {"file_path": os.path.join(root, "apps/ios/App/X.swift"), "content": "x"})
         allow("Bash", {"command": 'twbuild decide n.sound.grid0 "fav as overlay; touch target" --by ios'}, cwd=os.path.join(root, ".twbuild", "worktrees", "ios-sound"))
         deny("Bash", {"command": "env"}, "H5")
         deny("Bash", {"command": "brew install xcodegen"}, "H6")
@@ -549,6 +557,9 @@ def cycle_graph_end_to_end():
         r, d2, new = decide.record(p["worktrees"]["android"], "n.home.column0.text1", "something else", "android")
         check(not new and d2["id"] == "D-01", "먼저 쓴 쪽이 이긴다")
         check(decide.since(root, "mini", "")[0]["id"] == "D-01", "since")
+        decide.promote(root, "D-01", ("ios",))
+        pm = util.read_text(os.path.join(root, ".claude/rules/ios/promoted.md"))
+        check('paths: ["apps/ios/**"]' in pm and "D-01" in pm and "tracking 0.5" in pm and not os.path.exists(os.path.join(root, ".claude/rules/android/promoted.md")), pm)
         # home: 초안 그대로 → 정적 통과 → 머지
         out = router.submit(root, {"ios": {"status": "done"}, "android": {"status": "done"}})
         p = out["pending"]

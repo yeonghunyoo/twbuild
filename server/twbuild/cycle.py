@@ -437,7 +437,8 @@ def n_dispatch(s):
     for p in cfg.get("platforms") or []:
         wt = prepared.get(p, {}).get("worktree") or util.tw(root, util.WORKTREES, worktree_name(p, task["id"]))
         prompts[p] = task_prompt(root, s, p, task, wt, prepared.get(p, {}).get("drafted") or [], _rework_text(s, task["id"], p) if attempt > 1 else "")
-        models[p] = (cfg.get("agents", {}).get(p) or {}).get("model", "sonnet")
+        ag = cfg.get("agents", {}).get(p) or {}
+        models[p] = (ag.get("fallback") if (ag.get("fallback") and attempt >= int(ag.get("fallback_after", 3))) else None) or ag.get("model", "sonnet")   # 교체 탈출구: 같은 과제가 거듭 실패하면 다른 모델
     payload = _task(
         "build",
         f"Dispatch the developers for {task['kind']} `{task['id']}` (attempt {attempt}/{cfg['budget']['attempts_per_screen']}): launch BOTH agents at once, "
@@ -546,6 +547,11 @@ def n_smoke(s):
         b = gate.build(wt, p, vars_, log)
         if b.get("status") == "fail":
             b["tail"] = gate.tail(log)
+        if b.get("status") == "pass":
+            b["bytes"] = device.artifact_bytes(wt, p, vars_)                     # 산출물 크기 (크기 예산)
+            cap = ((cfg.get("budget") or {}).get("app_bytes") or {}).get(p)
+            if cap and b["bytes"] and b["bytes"] > int(cap):
+                b["status"], b["detail"] = "fail", f"크기 예산 초과: {b['bytes']:,} > {int(cap):,} bytes"
         r["build"] = b
         r["contract_decode"] = (gen.decode_check(wt, p, util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log"), cfg=cfg) if b.get("status") == "pass"
                                 else {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"})           # 계약 층(6장)
@@ -559,7 +565,8 @@ def n_smoke(s):
         elif r["build"]["status"] != "pass":
             r["device"] = {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"}
         elif policy == "every" or ok:
-            d = device.run(wts[p], p, vars_, util.tw(root, util.LOGS_DIR, f"device-{feature}-{task['id']}-{p}.log"))
+            d = device.run(wts[p], p, vars_, util.tw(root, util.LOGS_DIR, f"device-{feature}-{task['id']}-{p}.log"),
+                           screenshot=os.path.join(root, REPORTS, feature, f"{task['id']}-{p}.png"))        # 증거 스크린샷 (나중에: 스크린샷)
             r["device"] = {**d, "detail": leaks.mask_all(d.get("detail") or ""), "log": leaks.mask_all(d.get("log") or "")}
         else:
             r["device"] = {"status": "unmeasured", "detail": "다른 층이 실패한 시도 — 머지 직전에만 잰다(smoke.device: merge)"}
@@ -656,6 +663,13 @@ def evidence(root, feature, task, s, commits):
         return "✅" if st == "pass" else ("❌" if st == "fail" else "— 못 잼")
     for layer in ("static", "build", "parity", "device", "contract_decode"):
         L.append(f"| {layer} | {m((res.get('ios') or {}).get(layer))} | {m((res.get('android') or {}).get(layer))} |")
+    for p in ("ios", "android"):
+        b = (res.get(p) or {}).get("build") or {}
+        if b.get("bytes"):
+            L.append(f"- {p} 산출물 {b['bytes']:,} bytes")
+        shot = ((res.get(p) or {}).get("device") or {}).get("screenshot")
+        if shot:
+            L.append(f"- {p} 스크린샷: `{os.path.relpath(shot, root)}`")
     sid_rx = re.compile(rf"(^|\.){re.escape(task['id'])}(\.|$)")           # n.sound.* 뿐 아니라 data.sound.readonly · nav.sound.* 도 이 화면의 결정이다
     decs = [d for d in decide.ledger(root)["decisions"] if (d.get("screen") == task["id"] or sid_rx.search(d.get("topic") or "")) and d["status"] != "flipped"]
     if decs:

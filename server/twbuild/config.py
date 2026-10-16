@@ -20,6 +20,7 @@ DEFAULTS = {
     "auth": {"providers": ["email", "apple", "google"]},
     "smoke": {"device": "merge"},
     "budget": {"attempts_per_screen": 5},
+    "lead": {"edit_apps": False},            # H8 — 메인 세션이 apps/ 를 직접 쓰는 것을 허용할지
     "design": {"fetch": {"include": [], "exclude": [], "max_bytes": 262144}},
     "setup": {"build": True},                             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드한다
     "agents": {

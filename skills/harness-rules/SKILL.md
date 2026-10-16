@@ -41,6 +41,7 @@ same on both platforms (the generator names them; keep them).
 | H5 | secrets: `.env*`, keys, certificates, `~/.ssh`; `env`/`printenv` dumps |
 | H6 | installs and privilege: sudo · brew install · pip/npm global installs · `curl | sh` |
 | H7 | any write to Claude Design |
+| H8 | the lead (main session) writing under `apps/` — platform code is developer work (config `lead.edit_apps: true` lifts it) |
 
 ## Design import (lead only)
 D1 call outside a design run · D2 other project · D3 denied file (support.js, standalone HTML, bundles, uploads, binaries) · D4 outside the allow list · D5 over the size cap.

@@ -5,11 +5,13 @@ min_os: {ios: 17, android: 26}   # @Observable = iOS 17+. 첫 머지 뒤 잠김
 app: {name: "", product: "", id: ""}   # interview 가 채운다. id 는 이름에서 생성 (첫 머지 뒤 잠김)
 auth: {providers: [email, apple, google]}
 smoke: {device: merge}           # every | merge | off
-budget: {attempts_per_screen: 5}
+lead: {edit_apps: false}          # 훅 H8 — 메인 세션(lead)은 apps/ 를 직접 고치지 않는다; true 면 허용
+budget: {attempts_per_screen: 5}   # 크기 예산을 두려면 app_bytes: {ios: 60000000, android: 30000000} (스모크 build 층이 잰다)
 design:
   fetch: {include: [], exclude: [], max_bytes: 262144}
 setup: {build: true}             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드
 agents:
   lead:    {skills: [archify]}
+  # fallback: opus · fallback_after: 3 — 같은 과제가 거듭 실패하면 그 시도부터 다른 모델 (교체 탈출구)
   ios:     {model: sonnet, skills: [swiftui-expert, swift-concurrency, swift-security, authentication, push-notifications, app-store-review]}
   android: {model: sonnet, skills: [jetpack-compose, compose-state-and-effects, kotlin-concurrency-and-flow, security, identity, navigation, play, edge-to-edge]}

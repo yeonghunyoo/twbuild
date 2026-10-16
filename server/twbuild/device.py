@@ -170,6 +170,11 @@ def _ios(base, vars_, s, tools):
         if alive is None:
             _ios_crash_info(s, product)
             raise _Fail(f"{name}에서 {ALIVE_WAIT:.0f}s 안에 죽었다 (launch pid {pid})")
+        if s.screenshot:                                  # 증거 스크린샷 — 실패해도 스모크 판정과 무관
+            try:
+                s.sh(["xcrun", "simctl", "io", udid, "screenshot", s.screenshot], limit=30, quiet=True)
+            except (_Unmeasured, _Fail):
+                pass
         return f"{name}에서 {ALIVE_WAIT:.0f}s 뒤 살아 있다 (pid {alive})"
     finally:
         try:
@@ -228,6 +233,8 @@ def _android(base, vars_, s, tools):
             except (_Unmeasured, _Fail):
                 pass
             raise _Fail(f"{serial}에서 {ALIVE_WAIT:.0f}s 안에 죽었다 ({pkg})")
+        if s.screenshot:                                  # 증거 스크린샷 (adb exec-out 은 바이너리 — 따로 받는다)
+            _screencap(adb, serial, env, s.screenshot, min(30, max(1, int(s.remaining()))))
         return f"{serial}에서 {ALIVE_WAIT:.0f}s 뒤 살아 있다 (pid {pid})"
     finally:
         try:
@@ -238,10 +245,22 @@ def _android(base, vars_, s, tools):
 
 # ─────────────────────────── 입구 ───────────────────────────
 
-def run(base, platform, vars_, log_path, timeout=600, tools=None):
-    """빌드된 앱을 기기에 띄워 본다. → {"status", "detail", "log", "ms"}. 예외를 내지 않는다."""
+def _screencap(adb, serial, env, path, limit):
+    try:
+        r = subprocess.run([adb, "-s", serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=limit, env=env)
+        if r.returncode == 0 and r.stdout[:8] == b"\x89PNG\r\n\x1a\n":
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(r.stdout)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def run(base, platform, vars_, log_path, timeout=600, tools=None, screenshot=None):
+    """빌드된 앱을 기기에 띄워 본다. → {"status", "detail", "log", "ms", "screenshot"?}. screenshot: 살아 있을 때 찍을 PNG 경로. 예외를 내지 않는다."""
     t0 = time.monotonic()
     s = _Session(log_path, timeout)
+    s.screenshot = screenshot
     status, detail = "unmeasured", ""
     try:
         tools = _tools(tools)
@@ -260,7 +279,21 @@ def run(base, platform, vars_, log_path, timeout=600, tools=None):
         s.flush()
     except OSError:
         pass
-    return {"status": status, "detail": detail, "log": s.tail(), "ms": round((time.monotonic() - t0) * 1000, 1)}
+    out = {"status": status, "detail": detail, "log": s.tail(), "ms": round((time.monotonic() - t0) * 1000, 1)}
+    if screenshot and os.path.isfile(screenshot) and os.path.getsize(screenshot) > 0:
+        out["screenshot"] = screenshot
+    return out
+
+
+def artifact_bytes(base, platform, vars_):
+    """빌드 산출물 크기 — iOS .app 디렉터리 합, Android apk. 없으면 None. (나중에: 크기 예산)"""
+    if platform == "ios":
+        app = os.path.join(base, ".twbuild", "derived", "ios", "Build", "Products", "Debug-iphonesimulator", f"{vars_['product']}.app")
+        if not os.path.isdir(app):
+            return None
+        return sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(app) for f in fs if os.path.isfile(os.path.join(d, f)))
+    apk = os.path.join(base, util.APPS["android"], ANDROID_APK)
+    return os.path.getsize(apk) if os.path.isfile(apk) else None
 
 
 def available(tools=None):
