@@ -771,6 +771,37 @@ def fix_classification():
     c = cycle.classify_failure({"ios": {**ok, "static": {"status": "fail", "violations": [{"rule": "T3", "detail": "x"}]}}, "android": {**ok, "parity": {"status": "fail", "violations": [{"rule": "T9", "detail": "fonts"}]}}})
     check(c["kind"] == "rework" and "T9" in c["detail"], c)
 
+
+@case
+def redo_merged_screen_keeps_code():
+    """머지된 화면을 다시 과제로 — prepare 는 초안으로 개발자 코드를 덮지 않는다 (squash 머지라 draft 커밋이 없다)."""
+    from twbuild import cycle
+    root = _wired_repo()
+    try:
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "setup")
+        design.start(root, "mini", "P1", ["mini.dc.html"])
+        design.capture(root, "mini.dc.html", MINI, "e1", "P1")
+        design.capture(root, "_ds/mini-ds/styles.css", MINI_CSS, "c1", "P1")
+        design.finish(root)
+        cfg = config.load(root)
+        vars_ = config.app_vars(cfg)
+        lay = cycle._layouts(root, "mini")["home"]
+        wt, _ = git.ensure_worktree(root, "ios-home")
+        first = cycle._draft_into(root, wt, lay, "mini", "ios", vars_)
+        f = os.path.join(wt, "apps/ios/App/Features/Mini/Home/HomeView.swift")
+        check(first and os.path.isfile(f), first)
+        util.write_text(f, util.read_text(f) + "\n// developer code\n")
+        git.commit_all(wt, "home: developer work")
+        check(git.merge_squash(root, git.branch("ios-home"), "screen(mini/home): ios"), "squash 머지")     # n_merge 와 같은 순서: 머지 → 워크트리 · 브랜치 정리
+        git.remove_worktree(root, "ios-home")
+        wt, _ = git.ensure_worktree(root, "ios-home")
+        again = cycle._draft_into(root, wt, lay, "mini", "ios", vars_)
+        check(again == [] and "// developer code" in util.read_text(f), again)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 if __name__ == "__main__":
     sys.modules.setdefault("cases", sys.modules[__name__])          # 형제 모듈의 `from cases import case` 가 이 인스턴스를 보게
     for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts", "cases_icons"):
@@ -779,4 +810,3 @@ if __name__ == "__main__":
         except ImportError:
             pass
     sys.exit(main(sys.argv))
-

@@ -289,6 +289,8 @@ def _draft_into(root, wt, lay, feature, platform, vars_):
         return []
     catalog = gate.ds_types(wt, platform, vars_) & design.catalog_names(git.main_root(wt) or wt)     # 이 플랫폼에 이미 구현된 카탈로그 컴포넌트만 감싼다
     files = draft.swift(lay, feature, vars_, catalog) if platform == "ios" else draft.kotlin(lay, feature, vars_, catalog)
+    if any(os.path.isfile(os.path.join(wt, util.APPS[platform], rel)) for rel in files):
+        return []                                        # 화면 코드가 이미 있다(머지된 화면을 다시 과제로 — squash 로 draft 커밋은 없다) — 개발자 코드를 덮지 않는다
     written = []
     for rel, text in files.items():
         p = os.path.join(wt, util.APPS[platform], rel)
@@ -322,7 +324,8 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
               f"- Plan: `.twbuild/plans/{feature}/{sid}.yaml` (states · interactions · data · translations).",
               f"- Design source (for look only): `design/{feature}/` · tokens `design/ds/tokens.json` → generated `Tokens.*` constants.",
               f"- Fonts (generated, registered on both platforms — never add font files yourself, gate T9): iOS `FontFamily.heading` / `FontFamily.body` + `FontFamily.font(…)` in `App/Core/DesignSystem/Fonts.swift`; Android `FontFamilies.heading` / `FontFamilies.body` in `core/designsystem/Fonts.kt`. CSS `var(--font-heading)` → those; if the file is missing the fonts were not fetched — fall back to system fonts and say so in your note.",
-              f"- Structure draft (already committed as `draft({sid})`): {', '.join(drafted) if drafted else 'see Features/<feature>/<Screen>'}. It compiles; it is yours now."]
+              (f"- Structure draft (already committed as `draft({sid})`): {', '.join(drafted)}. It compiles; it is yours now." if drafted else
+               f"- This screen already exists (merged earlier) — no new draft was written. Change the existing code under Features/{util.pascal(feature)}/{util.pascal(sid)} (iOS) / features/{re.sub(r'[^a-z0-9]', '', feature.lower())}/{sid.lower()} (Android); keep every node id, UiState field and Action name.")]
         L += ["", "## What to do",
               "1. Translate every `// style:` comment into native styling using your translate skill. Values that match a token use the `Tokens.*` constant; other values come from the tree as written. Never invent colors/sizes that are not in the tree.",
               "2. Implement the ViewModel: Action → new UiState. Wire data through the container's repositories/stores (data task output, if any). Navigation goes through Route/Router.",
