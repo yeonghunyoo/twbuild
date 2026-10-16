@@ -757,7 +757,7 @@ def fix_classification():
 
 if __name__ == "__main__":
     sys.modules.setdefault("cases", sys.modules[__name__])          # 형제 모듈의 `from cases import case` 가 이 인스턴스를 보게
-    for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts"):
+    for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts", "cases_icons"):
         try:
             __import__(_m)
         except ImportError:

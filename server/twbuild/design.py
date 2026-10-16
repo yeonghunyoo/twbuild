@@ -356,6 +356,12 @@ def finish(root, spec=None, commit=True):
     from . import fonts                              # styles.css 의 웹폰트 → design/ds/fonts(스냅샷) → 두 앱 등록 · Fonts.swift/kt (2장)
     fonts_out = fonts.fetch(root) if (tk is not None and not os.environ.get("TWBUILD_OFFLINE")) else {"files": [], "skipped": [], "errors": []}
     fonts_inst = fonts.install(root, cfg) if fonts.index(root) else {"ios": [], "android": [], "errors": []}
+    from . import icons                              # 트리의 raw-svg 아이콘 → TwIcon(Swift) · TwIcons(Kotlin) 생성물 (3장 · T11)
+    try:
+        icon_files = icons.write(root, cfg)
+    except icons.IconError as e:
+        icon_files = []
+        run["icon_error"] = str(e)
     diff = {"added": [], "changed": [], "removed": []}
     for key, info in screens_out.items():
         cur = idx["screens"].get(key)
@@ -383,15 +389,16 @@ def finish(root, spec=None, commit=True):
     _save_run(root, run)
     committed = None
     if commit and git.is_repo(root):
-        paths = [util.DESIGN_DIR] + token_files
         pkg = (cfg.get("app") or {}).get("id", "com.example.app").replace(".", "/")
-    paths = list(paths) + [fonts.FONTS_DIR, "apps/ios/App/Resources/Fonts", "apps/ios/project.yml", "apps/ios/App/Core/DesignSystem",
-                           "apps/android/app/src/main/res/font", f"apps/android/app/src/main/kotlin/{pkg}/core/designsystem"]
-    if git.commit_paths(root, f"design-run: {run['id']} ({run['scope']})", *paths):
+        paths = [util.DESIGN_DIR] + token_files + icon_files + [fonts.FONTS_DIR, "apps/ios/App/Resources/Fonts", "apps/ios/project.yml",
+                                                                "apps/ios/App/Core/DesignSystem", "apps/android/app/src/main/res/font",
+                                                                f"apps/android/app/src/main/kotlin/{pkg}/core/designsystem"]
+        if git.commit_paths(root, f"design-run: {run['id']} ({run['scope']})", *paths):
             git.tag(root, f"design-run/{run['id']}", f"design run {run['id']} {run['scope']}")
             committed = git.head(root)
     return {"run": run["id"], "scope": run["scope"], "screens": screens_out, "status": statuses, "diff": diff,
             "tokens": {"files": token_files, "unresolved": (tk or {}).get("unresolved", [])} if tk is not None else None,
+            "icons": {"files": icon_files, **({"error": run["icon_error"]} if run.get("icon_error") else {})},
             "commit": committed}
 
 

@@ -129,7 +129,8 @@ def checks(root, cfg=None, t=None):
                           "", f"{p} 전체", 2))
     try:
         drift = contract.drift(root) if os.path.isfile(os.path.join(root, util.API_DIR, util.API_FILE)) else ["(계약 없음)"]
-        drift += tokens.drift(root, cfg) + gen.drift(root, cfg)
+        from . import icons
+        drift += tokens.drift(root, cfg) + gen.drift(root, cfg) + icons.drift(root, cfg)
         out.append(_check("contract", "계약 · 토큰 → 생성물 재생성 일치", not drift, ", ".join(drift) if drift else "", "", "계약 · 클라이언트 · 토큰", 2))
     except contract.ContractError as e:
         out.append(_check("contract", "계약 · 토큰 → 생성물 재생성 일치", False, str(e), "api/openapi.yaml · fragments 충돌을 고친다", "계약 · 클라이언트 · 토큰", 2))
