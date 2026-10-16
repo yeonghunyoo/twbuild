@@ -344,4 +344,5 @@ agents:
 ## 나중에
 
 붙인 것(2026-10-14~16): review · fix 분류 · retro(4장) · 스크린샷(기기 층이 살아 있을 때 `.twbuild/reports/<기능>/<화면>-<플랫폼>.png`, 증거 보고서에 링크) · 크기 예산(build 층이 산출물 바이트를 재고 `budget.app_bytes.<플랫폼>` 을 넘으면 fail) · 에이전트 교체 탈출구(`agents.<플랫폼>.fallback` · `fallback_after`, 기본 3회째부터) · 메인 세션 격리(H8, `lead.edit_apps`) · 승격 루프(`twbuild decide promote D-xx [ios|android]` → `.claude/rules/<플랫폼>/promoted.md`).
-남은 것: 툴 장기 메모리 · 생성기 스타일 규칙 승격(번역표로 올리기) · 기기 접근성 트리 덤프 비교 · 백엔드 API 스모크 · 계약 옵션(실시간 · 업로드) · 문구 키 · 아이콘 연결 · 백엔드 개발자 · 에이전트 팀(팀원 간 메시지).
+아이콘 연결(2026-10-16): 트리 svg → `TwIcon`(Swift) · `TwIcons`(Kotlin) 생성물 · 초안 호출 · T11.
+남은 것: 툴 장기 메모리 · 생성기 스타일 규칙 승격(번역표로 올리기) · 기기 접근성 트리 덤프 비교 · 백엔드 API 스모크 · 계약 옵션(실시간 · 업로드) · 문구 키 · 백엔드 개발자 · 에이전트 팀(팀원 간 메시지).
