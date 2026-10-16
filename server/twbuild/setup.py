@@ -245,6 +245,8 @@ def scaffold(root, answers=None):
         _emit(root, os.path.join(util.FRAGMENTS_DIR, rel), util.render(text, vars_), log, out)
     out["generated"] = contract.write_generated(root)
     out["client"] = gen.write(root, cfg)                 # 계약 → Swift · Kotlin 모델 · 클라이언트 (생성물, 1장)
+    from . import icons
+    out["icons"] = icons.write(root, cfg)                # 레이아웃 트리가 있으면 생성 아이콘 (T11)
     from . import fonts
     out["fonts"] = (fonts.install(root, cfg)["ios"] + fonts.install(root, cfg)["android"]) if fonts.index(root) else []     # 받아 둔 웹폰트를 두 앱에 등록
     # placeholders → .env.example · SETUP.md (사람용 문서는 손으로 쓰지 않는다)
@@ -351,7 +353,8 @@ def selfcheck(root):
     layers = {}
     problems = config.problems(cfg)
     try:
-        drift = contract.drift(root) + gen.drift(root, cfg)
+        from . import icons
+        drift = contract.drift(root) + gen.drift(root, cfg) + icons.drift(root, cfg)
     except (contract.ContractError, gen.GenError) as e:
         drift = [str(e)]
     missing = [p for p in cfg.get("platforms") or [] if not os.path.isdir(util.app_dir(root, p))]

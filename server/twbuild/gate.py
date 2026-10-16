@@ -14,7 +14,7 @@ import re
 import subprocess
 import time
 
-from . import draft, util
+from . import draft, icons, util
 
 SRC_EXT = {"ios": (".swift",), "android": (".kt",)}
 HEX_RE = re.compile(r"(?<![\w#])#([0-9a-fA-F]{6})\b|twHex:\s*0x([0-9A-Fa-f]{6})|Color\(0x[0-9A-Fa-f]{2}([0-9A-Fa-f]{6})\)")
@@ -80,6 +80,12 @@ def static_check(base, platform, lay, token_hexes=(), extra_hexes=(), catalog=()
             if key not in blob:
                 violations.append({"rule": "T2", "detail": f"items key of list missing: {n['items']} ({key})"})
             scope = {**scope, n.get("as") or "item": draft._item_type(n["items"])}
+        if k == "icon" and n.get("svg"):                                # T11 — 경로 데이터가 있는 아이콘은 생성 아이콘으로 그린다
+            checked += 1
+            name = icons.name_of(n)
+            call = f".{name}" if platform == "ios" else f"TwIcons.{name}"
+            if call not in blob:
+                violations.append({"rule": "T11", "detail": f"icon {n.get('id')} must use the generated icon {('TwIcon' if platform == 'ios' else '') + call} — do not redraw raw-svg icons"})
         comp = draft.catalog_component(n, catalog)
         if comp:
             checked += 1

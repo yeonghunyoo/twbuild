@@ -16,7 +16,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, leaks, metrics, setup, tokens, tree, util, yaml_lite
+from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, setup, tokens, tree, util, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -326,7 +326,7 @@ def task_prompt(root, s, platform, task, wt, drafted, rework):
         L += ["", "## What to do",
               "1. Translate every `// style:` comment into native styling using your translate skill. Values that match a token use the `Tokens.*` constant; other values come from the tree as written. Never invent colors/sizes that are not in the tree.",
               "2. Implement the ViewModel: Action → new UiState. Wire data through the container's repositories/stores (data task output, if any). Navigation goes through Route/Router.",
-              "3. Replace icon placeholders with real icons (SF Symbols / Material icons closest to the SVG; note raw-svg paths in a comment).",
+              "3. Icons: an icon whose tree node has svg data is GENERATED for both platforms (iOS `TwIconView(.icXxx, size:)` · Android `Icon(TwIcons.icXxx, …)`, already in the draft) — keep the call, tint it with the design color, never redraw or swap it (gate T11). Only icons without path data need the closest SF Symbol / Material icon.",
               "4. Keep every accessibility identifier / test tag exactly as in the tree. Keep UiState field names, Action names and Route names as generated (the gate compares both platforms).",
               "5. Run `twbuild check` (the static gate T1~T6 for your screen, parity when the other worktree exists; `--build` adds the platform build) and the platform build from your playbook until both are clean. Commit in small steps; finish with a commit.",
               "6. If a CSS → native translation is ambiguous for a node, record it: `twbuild decide <node id> \"<your interpretation>\" --by " + platform + "`. If a decision for that node already exists, follow it.",
@@ -381,6 +381,9 @@ def n_prepare(s):
         if gen.drift(wt, cfg):                           # 계약 생성물이 브랜치에 없거나 낡았다(브랜치를 자른 뒤 계약이 바뀜) — 결정적이라 다시 쓰고 커밋한다
             gen.write(wt, cfg)
             git.commit_all(wt, "generated(contract): models · client from api/openapi.yaml")
+        if icons.drift(wt, cfg):                         # 생성 아이콘도 같다 — 트리가 바뀌었거나 생성기 이전에 자른 브랜치 (T11)
+            icons.write(wt, cfg)
+            git.commit_all(wt, "generated(icons): TwIcon · TwIcons from the layout trees")
         if p == "android":
             gate.ensure_android_props(wt)                # local.properties(gitignore) — 개발자 빌드가 바로 되게
         drafted = []

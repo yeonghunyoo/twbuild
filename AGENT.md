@@ -90,6 +90,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | `class` | 디자인 시스템 클래스 → 그 카탈로그 컴포넌트로 만든다 |
 | `text` · `params` · `raw_text` · `bind` · `on_*` | 문구(바인딩이 섞이면 `{키}` 자리 + `params`) · 문구 키 연결 전엔 `raw_text` · 바인딩 상태 키 · 핸들러 이름(`on_click` · `on_input` · `on_mousedown` …) |
 | `svg` | `icon` 노드의 `<path d>` · 도형 데이터(경로당 4000자) — 두 플랫폼이 같은 아이콘을 그리게. 그림이지 구조가 아니라 **해시에서 빠진다**(초안은 `// svg:` 주석으로 싣는다) |
+| `svg_paint` | `<svg>` 의 칠 · 선(`fill` · `stroke` · `stroke-width` · `stroke-linecap` · `stroke-linejoin` · `fill-rule`; 없으면 자식 path 값, `currentColor` → `current`, style 이 바인딩이면 `bind:<식>`). `svg` 처럼 해시에서 빠진다 |
 
 - 원래 값(px · hex)은 트리에 있을 때만 쓴다. 트리에 없는 값을 지어내면 위반.
 - 한 `.dc.html` 에 여러 화면이 `sc-if` 로 섞이면 intake 가 화면 ↔ 분기를 매핑한다. 모르는 태그는 "못 잼" 으로 남긴다.
@@ -99,7 +100,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | 생성기 (결정적) | 개발자 |
 |---|---|
 | 노드 → 컨테이너(`VStack` · `HStack` · `ZStack` · `LazyVGrid` ↔ `Column` · `Row` · `Box` · `LazyVerticalGrid`) · 중첩 · 순서 | `// style:` 주석(CSS 원문)을 플랫폼 방식으로 번역 |
-| `if` · `list` · 노드 ID · 문구 · 바인딩 자리 · `send(Action)` 호출부 · 카탈로그 컴포넌트 호출(class 가 그 플랫폼에 구현된 컴포넌트면 `<Name> { 노드 }` 로 감싼다 — 컴포넌트는 trailing content 를 받는다) | ViewModel 로직(Action 처리 → UiState) · Repository · API · 화면 전환 |
+| `if` · `list` · 노드 ID · 문구 · 바인딩 자리 · `send(Action)` 호출부 · icon 노드 → 생성 아이콘 호출(`svg` 가 있으면 iOS `TwIconView(.icXxx, size:)` · Android `Icon(TwIcons.icXxx, …)` — `icons.py` 가 트리에서 두 플랫폼 같은 벡터를 만든다: 경로를 절대 M · L · C · Q · Z 로 정규화(호 → 3차 베지어), 이름은 (svg · viewBox · 칠 방식) 해시, 같은 그림은 하나; 경로가 없는 아이콘만 개발자가 심볼을 고른다) · 카탈로그 컴포넌트 호출(class 가 그 플랫폼에 구현된 컴포넌트면 `<Name> { 노드 }` 로 감싼다 — 컴포넌트는 trailing content 를 받는다) | ViewModel 로직(Action 처리 → UiState) · Repository · API · 화면 전환 |
 | 화면의 `UiState`(`bind` · `if` 상태 키) · `Action`(`on_*`) 타입 — 14장 | |
 
 - 초안은 개발자 소유 코드다. 컴파일되게 내고, 확실하지 않은 매핑은 주석으로 남긴다.
@@ -172,7 +173,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
 - 규칙은 `harness-rules` 에 ID 로 두고, 거부 메시지가 같은 ID 를 인용한다.
 - 정적 규칙(`server/twbuild/gate.py`): T1 뷰 노드 ID 가 코드에 있다(`accessibilityIdentifier`/`testTag`) · T2 `if`·`list` 상태 키가 있다 · T3 `on_*` 핸들러의 Action 이 있다(리스트 안은 `<items><Handler>(item)`) ·
-  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 · 각 Route 의 매개변수(이름 · 타입) iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem/Catalog` ↔ `core/designsystem/catalog`, 생성물 헤더 파일 제외) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다) · T9 두 플랫폼에 등록된 폰트 집합(family · weight · style)이 같다(하네스가 등록, 개발자는 손대지 않는다) · T10 화면의 `UiState` 필드(이름 · 타입: Bool≡Boolean · [T]≡List<T>)와 `Action`(이름 · 매개변수 타입)이 iOS = Android. 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
+  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 · 각 Route 의 매개변수(이름 · 타입) iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem/Catalog` ↔ `core/designsystem/catalog`, 생성물 헤더 파일 제외) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다) · T9 두 플랫폼에 등록된 폰트 집합(family · weight · style)이 같다(하네스가 등록, 개발자는 손대지 않는다) · T11 경로 데이터가 있는 아이콘은 생성 아이콘(`TwIcon` · `TwIcons`)으로 그린다(실측: 같은 즐겨찾기 아이콘을 iOS 는 별, Android 는 하트로 그렸다) · T10 화면의 `UiState` 필드(이름 · 타입: Bool≡Boolean · [T]≡List<T>)와 `Action`(이름 · 매개변수 타입)이 iOS = Android. 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
 
 ## 7. 팀 · 스킬
 
@@ -313,7 +314,7 @@ agents:
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
 | `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 — 절차 · CSS→네이티브 번역표(두 플랫폼 같은 행 순서) · 빌드 환경 · 규칙 ID(T · H · D) |
 | `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만. `skills:` 로 코어 스킬 프리로드, `tools:` 에 claude-design · Agent 없음. 플러그인 에이전트 타입 `twbuild:ios-dev` |
-| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T10 · 빌드) · device(기기 층) · skills(공개 스킬 설치) · fonts(웹폰트) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T11 · 빌드) · device(기기 층) · skills(공개 스킬 설치) · fonts(웹폰트) · icons(트리 svg → TwIcon · TwIcons) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
 | `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · `decisions.py`(SubagentStart 에 기능의 결정 전부 · PreToolUse 에 새 결정만, `agent_id` 기준 중복 제거) · `agent_metrics.py`(SubagentStart→Stop 시간 · 트랜스크립트 usage 합산). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
 | `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block`(블록이 템플릿과 다르면 wire · prepare 가 갱신) · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
 | `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py`, 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |

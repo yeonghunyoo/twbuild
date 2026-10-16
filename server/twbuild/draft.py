@@ -10,7 +10,7 @@
 """
 import re
 
-from . import util
+from . import icons as icons_mod, util
 
 VIEW_KINDS = ("row", "column", "grid", "group", "box", "text", "icon", "input", "image", "unknown")
 IDENT_RE = re.compile(r"[^0-9A-Za-z]+")
@@ -154,6 +154,27 @@ def catalog_component(n, catalog):
     return None
 
 
+def _icon_size(n, key, default=24.0):
+    try:
+        v = float(re.sub(r"px$", "", str(n.get(key) or "").strip()))
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
+def _icon_note(n):
+    """생성 아이콘 줄 끝 주석 — 칠 · 선 값(색 힌트)과 상태가 칠을 바꾸는지."""
+    p = n.get("svg_paint") or {}
+    vals = " ".join(f"{k}={v}" for k, v in sorted(p.items()) if k in ("fill", "stroke"))
+    bound = any(str(v).startswith("bind:") for v in p.values())
+    return f"generated icon (gate T11) — tint with the design color{(' · ' + vals) if vals else ''}" + \
+        ("; paint is bound to state — pass fill:/stroke: (Swift) or TwIcons.<name>With(fill, stroke) (Kotlin) from UiState" if bound else "")
+
+
+def _fmt(x):
+    return f"{x:g}"
+
+
 def _grid_cols(n):
     cols = str((n.get("style") or {}).get("grid-template-columns", ""))
     c = len(cols.split()) if cols else 2
@@ -266,8 +287,12 @@ def _swift_node(n, an, scope, depth, out, wrapped=False):
     elif k == "text":
         out.append(f"{pad}Text({_text_expr(n, scope, 'swift', an)})")
     elif k == "icon":
-        out.append(f"{pad}Image(systemName: \"circle\")  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}, viewBox {n.get('viewbox', '?')}) — draw this path data (same on both platforms)")
+        name = icons_mod.name_of(n)
         out += [f"{pad}// svg: {d}" for d in n.get("svg") or []]
+        if name:
+            out.append(f"{pad}TwIconView(.{name}, size: {_fmt(_icon_size(n, 'width'))})  // {_icon_note(n)}")
+        else:
+            out.append(f"{pad}Image(systemName: \"circle\")  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}) without path data — pick the closest SF Symbol")
     elif k == "image":
         out.append(f"{pad}Image({_quote(str(n.get('src') or ''))})")
     elif k == "input":
@@ -476,8 +501,15 @@ def _kt_node(n, an, scope, depth, out, in_lazy=False, wrapped=False):
     elif k == "text":
         out.append(f"{pad}Text(text = {_text_expr(n, scope, 'kt', an)}, modifier = {m})")
     elif k == "icon":
-        out.append(f"{pad}Box(modifier = {m}.size(24.dp))  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}, viewBox {n.get('viewbox', '?')}) — draw this path data (same on both platforms)")
+        name = icons_mod.name_of(n)
         out += [f"{pad}// svg: {d}" for d in n.get("svg") or []]
+        if name:
+            an.uses_icons = True
+            w, h = _icon_size(n, "width"), _icon_size(n, "height", _icon_size(n, "width"))
+            size = f".size({_fmt(w)}.dp)" if w == h else f".size(width = {_fmt(w)}.dp, height = {_fmt(h)}.dp)"
+            out.append(f"{pad}Icon(TwIcons.{name}, contentDescription = null, modifier = {m}{size})  // {_icon_note(n)}")
+        else:
+            out.append(f"{pad}Box(modifier = {m}.size(24.dp))  // raw-svg ({n.get('paths', 0)} paths, {n.get('width', '?')}x{n.get('height', '?')}) without path data — pick the closest Material icon")
     elif k == "image":
         out.append(f"{pad}Box(modifier = {m})  // image: {n.get('src')}")
     elif k == "input":
@@ -527,8 +559,11 @@ def kotlin(lay, feature, vars_, catalog=()):
     else:
         body.append('            Text(text = "(no layout)")')
     files = {}
+    icon_imports = (["import androidx.compose.material3.Icon", f"import {pkg}.core.designsystem.generated.TwIcons"]
+                    if getattr(an, "uses_icons", False) else [])
     files[f"{base}/{S}Screen.kt"] = "\n".join([
         f"package {P}", "",
+        *icon_imports,
         "import androidx.compose.foundation.clickable",
         "import androidx.compose.foundation.layout.Box",
         "import androidx.compose.foundation.layout.Column",

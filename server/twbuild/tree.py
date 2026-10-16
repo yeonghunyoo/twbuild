@@ -261,14 +261,16 @@ class TokenMap:
 
 
 SVG_D_CAP = 4000
+SVG_PAINT_ATTRS = ("fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "fill-rule")
 SVG_SHAPE_ATTRS = ("cx", "cy", "r", "rx", "ry", "x", "y", "x1", "y1", "x2", "y2", "width", "height", "points")
 
 
 class _Node:
-    __slots__ = ("tag", "attrs", "children", "text", "paths", "svg")
+    __slots__ = ("tag", "attrs", "children", "text", "paths", "svg", "svg_child_paint")
 
     def __init__(self, tag, attrs):
         self.tag, self.attrs, self.children, self.text, self.paths, self.svg = tag, dict(attrs), [], [], 0, []
+        self.svg_child_paint = {}
 
 
 class _Parser(htmlparser.HTMLParser):
@@ -288,6 +290,9 @@ class _Parser(htmlparser.HTMLParser):
                         n.svg.append(str(a["d"])[:SVG_D_CAP])
                     elif tag in ("circle", "rect", "line", "polyline", "polygon", "ellipse"):
                         n.svg.append(tag + "(" + " ".join(f"{k}={v}" for k, v in a.items() if k in SVG_SHAPE_ATTRS) + ")")
+                    for k in SVG_PAINT_ATTRS:                          # 자식(path · g)에만 칠이 적힌 아이콘 — 처음 나온 값을 쓴다
+                        if k in a and k not in n.svg_child_paint:
+                            n.svg_child_paint[k] = a[k]
                     break
             if tag in ("g", "defs"):
                 self.stack.append(_Node(tag, attrs))
@@ -424,6 +429,8 @@ def _node_json(n, tm, slots):
         out["style_bind"] = bind
     if style:
         out["style"] = style
+    if out.get("kind") == "icon" and tag == "svg":
+        out["svg_paint"] = _svg_paint(n, style, bind)        # 칠 · 선 — 생성 아이콘(icons.py)이 쓴다. 해시에서 빠진다
     kids = []
     for c in n.children:
         j = _node_json(c, tm, slots)
@@ -483,10 +490,31 @@ def layout(markup, spec, all_specs, tm, source="", frame=None):
     return out
 
 
+def _svg_paint(n, style, bind):
+    """<svg> 의 칠 · 선 속성 — 요소 속성 > 정적 style > 자식(path) 속성. currentColor → "current", 값이 없고 style 이 바인딩이면 "bind:<식>"."""
+    out = {}
+    for k in SVG_PAINT_ATTRS:
+        v = n.attrs.get(k)
+        if v is None and isinstance(style, dict):
+            v = style.get(k)
+        if v is None:
+            v = n.svg_child_paint.get(k)
+        if v is None:
+            if bind and k in ("fill", "stroke"):
+                out[k] = f"bind:{bind}"
+            continue
+        v = str(v).strip()
+        out[k] = "current" if v.lower() == "currentcolor" else v
+    return out
+
+
+HASH_EXCLUDE = ("svg", "svg_paint")
+
+
 def _hashable(n):
-    """해시 재료 — 노드의 svg(그림 데이터)는 뺀다. 같은 구조 = 같은 해시."""
+    """해시 재료 — 노드의 svg · svg_paint(그림 데이터)는 뺀다. 같은 구조 = 같은 해시."""
     if isinstance(n, dict):
-        return {k: _hashable(v) for k, v in n.items() if k != "svg"}
+        return {k: _hashable(v) for k, v in n.items() if k not in HASH_EXCLUDE}
     if isinstance(n, list):
         return [_hashable(v) for v in n]
     return n
