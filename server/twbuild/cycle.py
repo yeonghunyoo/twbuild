@@ -38,6 +38,7 @@ class CycleState(TypedDict, total=False):
     reports: list
     blocked: dict
     retries: dict        # id → 스모크 재측정 횟수 (fix 분류: 흔들림)
+    review: dict         # 킥오프 검토 결과 — 첫 배차 과제에 실린다
     log: Annotated[list, operator.add]
 
 
@@ -236,7 +237,7 @@ def n_review(s):
     root, feature = s["root"], s["feature"]
     findings = review_findings(root, feature, s)
     if not findings:
-        return {"phase": "build", "log": ["review:clean"]}
+        return {"phase": "build", "review": {"findings": 0, "result": "clean"}, "log": ["review:clean"]}
     payload = _task(
         "review",
         "Kickoff review: the plans and the layout trees disagree (see `findings`). Revise the plans — submit {plans: {screen: {fields to merge}}, data?: [entities]} — "
@@ -245,7 +246,7 @@ def n_review(s):
         findings=findings,
     )
     if (payload or {}).get("accept"):
-        return {"phase": "build", "log": ["review:accepted"]}
+        return {"phase": "build", "review": {"findings": len(findings), "result": "accepted"}, "log": ["review:accepted"]}
     plans = payload.get("plans") if isinstance((payload or {}).get("plans"), dict) else {}
     for sid, p in plans.items():
         path = os.path.join(root, PLANS, feature, f"{sid}.yaml")
@@ -446,7 +447,7 @@ def n_dispatch(s):
         "(model per `models`). Pass each prompt verbatim; do not summarize. Wait for both to finish. Then submit their results: "
         "{ios: {status: done|blocked, summary, note}, android: {...}}. Do not fix their code yourself.",
         {"ios": "{status: done|blocked, summary: string, note: path}", "android": "{status: done|blocked, summary: string, note: path}"},
-        job=task, attempt=attempt, prompts=prompts, models=models, worktrees={p: prepared.get(p, {}).get("worktree") for p in prepared},
+        review=s.get("review"), job=task, attempt=attempt, prompts=prompts, models=models, worktrees={p: prepared.get(p, {}).get("worktree") for p in prepared},
     )
     dev = {p: (payload.get(p) if isinstance(payload.get(p), dict) else {"status": "done", "summary": str(payload.get(p) or "")}) for p in cfg.get("platforms") or []}
     attempts = {**(s.get("attempts") or {}), task["id"]: attempt}
@@ -769,7 +770,7 @@ def n_done(s):
 def n_retro(s):
     """사이클 회고(13장) — 이번 사이클 지표를 이력에 남기고 이전 사이클과 비교한 보고서를 쓴다. 결정적, LLM 없음."""
     root, feature = s["root"], s["feature"]
-    metrics.close_cycle(root, feature)
+    metrics.close_cycle(root, feature, [t["id"] for t in s.get("order") or []])
     rep = metrics.retro_markdown(root, feature)
     util.write_text(os.path.join(root, REPORTS, feature, "_retro.md"), rep)
     git.commit_paths(root, f"retro({feature}): 사이클 지표 이력", os.path.join(util.TW_DIR, util.METRICS_DIR, metrics.CYCLES_DIR))

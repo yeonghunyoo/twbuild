@@ -133,7 +133,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | build | 결정적 + 개발자 둘 | 디자인 시스템 과제(카탈로그 `design/ds/components/*.html` 의 클래스 가운데 **이 기능의 트리가 쓰는 것**이 있고 원장 `ds.built` 가 없을 때 — `Core/DesignSystem/Catalog/<Name>`, 두 플랫폼 같은 이름 · 매개변수, trailing content 규약. 카탈로그는 클래스 기반: 기본 클래스 = 컴포넌트, `<기본>-x` = 부품, 같은 요소의 나머지 = 변형) → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev. 실측: 사운드스케이프 화면은 class 를 안 써 ds 과제가 없다(카탈로그 캡처 R-0002 는 됨) |
 | smoke | 결정적 | 게이트 3층 (6장). 실패 → **fix 분류**: rework(개발자 몫 — 정적 · 빌드 · 크래시 · 패리티) · retry(흔들림 — 시간 초과, 재배차 없이 한 번 다시 잰다) · blocked(하네스 · lead 몫 — 생성물 안 컴파일 · 계약 예시 디코딩 실패 · T9; 재작업으론 못 고친다). 화면당 예산(기본 5회)을 넘으면 `blocked` |
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
-| retro | 결정적 | 사이클 끝 — 요약 숫자를 이력(`cycles/<기능>.history.json`)에 보태고 이전 사이클과 비교한 회고(`.twbuild/reports/<기능>/_retro.md`: 첫 시도 통과율 · 스모크/배차 · 빌드 · 노드당 토큰 · 재작업 규칙 · 멈춤 사유(하네스 vs 개발자) · 제안)를 쓴다. LLM 없음. `twbuild stats --retro <기능>` |
+| retro | 결정적 | 사이클 끝 — 이 사이클 과제만의 요약 숫자를 이력(`cycles/<기능>.history.json`)에 보태고 이전 사이클과 비교한 회고(`.twbuild/reports/<기능>/_retro.md`: 첫 시도 통과율 · 스모크/배차 · 빌드 · 노드당 토큰 · 재작업 규칙 · 멈춤 사유(하네스 vs 개발자) · 제안)를 쓴다. LLM 없음. `twbuild stats --retro <기능>` |
 
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
 - 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
@@ -172,7 +172,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
 - 규칙은 `harness-rules` 에 ID 로 두고, 거부 메시지가 같은 ID 를 인용한다.
 - 정적 규칙(`server/twbuild/gate.py`): T1 뷰 노드 ID 가 코드에 있다(`accessibilityIdentifier`/`testTag`) · T2 `if`·`list` 상태 키가 있다 · T3 `on_*` 핸들러의 Action 이 있다(리스트 안은 `<items><Handler>(item)`) ·
-  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem/Catalog` ↔ `core/designsystem/catalog`, 생성물 헤더 파일 제외) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다) · T9 두 플랫폼에 등록된 폰트 집합(family · weight · style)이 같다(하네스가 등록, 개발자는 손대지 않는다) · T10 화면의 `UiState` 필드(이름 · 타입: Bool≡Boolean · [T]≡List<T>)와 `Action`(이름 · 매개변수 타입)이 iOS = Android. 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
+  T4 트리 · 토큰 · 디자인 원본(데이터 스크립트 포함)에 없는 직접 색 리터럴이 없다 · T5 Route 집합 · 각 Route 의 매개변수(이름 · 타입) iOS = Android · T6 데이터 계층 타입 이름 iOS = Android(`App/Core/Data` ↔ `core/data`) · T7 디자인 시스템 컴포넌트 이름(타입 + 대문자 함수) iOS = Android(`App/Core/DesignSystem/Catalog` ↔ `core/designsystem/catalog`, 생성물 헤더 파일 제외) · T8 class 노드는 그 플랫폼에 구현된 카탈로그 컴포넌트를 호출한다(`<Name>(` · `<Name> {`; 초안이 감싼다) · T9 두 플랫폼에 등록된 폰트 집합(family · weight · style)이 같다(하네스가 등록, 개발자는 손대지 않는다) · T10 화면의 `UiState` 필드(이름 · 타입: Bool≡Boolean · [T]≡List<T>)와 `Action`(이름 · 매개변수 타입)이 iOS = Android. 결과는 `.twbuild/results/<기능>/<화면>.json`, 실패 상세(위반 · 빌드 로그 꼬리)는 재작업 과제 프롬프트에 실린다.
 
 ## 7. 팀 · 스킬
 

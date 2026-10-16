@@ -303,11 +303,39 @@ def state_parity_check(ios_base, android_base, vars_, feature, screen):
     return {"status": "fail" if v else "pass", "violations": v}
 
 
+def route_params(base, platform, vars_):
+    """Route 이름(소문자) → 매개변수 [(이름, 정규화 타입)] — iOS `case x(id: String?)` · Android `data class X(val id: String? = null)`."""
+    out = {}
+    if platform == "ios":
+        t = _strip_comments(util.read_text(os.path.join(base, "apps/ios/App/Core/Navigation/Route.swift"), ""))
+        for m in re.finditer(r"^\s*case\s+([^\n]+)", t, re.M):
+            for part in re.split(r",\s*(?![^()]*\))", m.group(1)):
+                pm = re.match(r"\s*(\w+)(?:\(([^)]*)\))?", part)
+                if pm:
+                    ps = [p for p in (pm.group(2) or "").split(",") if p.strip()]
+                    out[pm.group(1).lower()] = [((p.split(":")[0].strip() if ":" in p else ""), norm_type(p.split(":")[-1])) for p in ps]
+        return out
+    pkg = vars_["id"].replace(".", "/")
+    t = _strip_comments(util.read_text(os.path.join(base, f"apps/android/app/src/main/kotlin/{pkg}/core/navigation/Route.kt"), ""))
+    for m in re.finditer(r"data\s+(?:object|class)\s+(\w+)(?:\(([^)]*)\))?", t):
+        ps = [p for p in (m.group(2) or "").split(",") if p.strip()]
+        out[m.group(1).lower()] = [(re.sub(r"^\s*va[lr]\s+", "", p.split(":")[0]).strip(), norm_type(p.split(":", 1)[-1].split("=")[0])) for p in ps]
+    return out
+
+
 def parity_check(ios_base, android_base, vars_):
+    """T5 — Route 집합과 각 Route 의 매개변수(이름 · 타입)가 iOS = Android (실측: mixer(presetId:) 가 한쪽만 바뀌어도 통과했다)."""
     a, b = routes(ios_base, "ios", vars_), routes(android_base, "android", vars_)
-    if a == b:
-        return {"status": "pass", "violations": []}
-    return {"status": "fail", "violations": [{"rule": "T5", "detail": f"routes differ — ios only: {sorted(a - b)}, android only: {sorted(b - a)}"}]}
+    if a != b:
+        return {"status": "fail", "violations": [{"rule": "T5", "detail": f"routes differ — ios only: {sorted(a - b)}, android only: {sorted(b - a)}"}]}
+    pa, pb = route_params(ios_base, "ios", vars_), route_params(android_base, "android", vars_)
+    v = []
+    for name in sorted(a):
+        x = [(n.lower(), t) for n, t in pa.get(name, [])]
+        y = [(n.lower(), t) for n, t in pb.get(name, [])]
+        if x != y:
+            v.append({"rule": "T5", "detail": f"route `{name}` parameters differ — ios {x} · android {y}"})
+    return {"status": "fail" if v else "pass", "violations": v}
 
 
 def ensure_android_props(base, t=None):

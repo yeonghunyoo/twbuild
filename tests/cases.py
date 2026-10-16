@@ -621,7 +621,23 @@ def cycle_graph_end_to_end():
         retro = util.read_text(os.path.join(root, ".twbuild/reports/mini/_retro.md"))
         check("회고 (사이클 1)" in retro and "T1" in retro and "제안" in retro, retro[:400])
         check("retro(mini)" in _git(root, "log", "--oneline", "--", ".twbuild/metrics/cycles"), "retro 커밋")
-        check(metrics.close_cycle(root, "mini")["n"] == 1 and len(metrics.history(root, "mini")) == 1, "같은 사이클은 두 번 닫지 않는다")
+        check(metrics.close_cycle(root, "mini", hist[0]["task_ids"])["n"] == 1 and len(metrics.history(root, "mini")) == 1, "같은 사이클은 두 번 닫지 않는다")
+        check(hist[0]["task_ids"] == ["data", "ds", "home", "sheet", "stats"], hist[0]["task_ids"])      # 사이클 범위
+        # retro 뒤에도 stats 가 돈다 (실측: 이력 파일을 요약으로 읽어 죽었다)
+        check("mini" in metrics.compare_table(root) and "home" in metrics.feature_table(root, "mini"), "stats after retro")
+        # T5 — Route 매개변수까지 본다
+        from twbuild import gate as _g
+        pk = config.app_vars(config.load(root))["id"].replace(".", "/")
+        rs, rk = os.path.join(root, "apps/ios/App/Core/Navigation/Route.swift"), os.path.join(root, f"apps/android/app/src/main/kotlin/{pk}/core/navigation/Route.kt")
+        s0, k0 = util.read_text(rs), util.read_text(rk)
+        check(_g.parity_check(root, root, config.app_vars(config.load(root)))["status"] == "pass", "T5 기본")
+        util.write_text(rs, s0.replace("    case root", "    case root\n    case detail(id: String)", 1))
+        util.write_text(rk, k0.replace("data object Root : Route", "data object Root : Route\n    @Serializable\n    data class Detail(val id: Int) : Route", 1))
+        pc = _g.parity_check(root, root, config.app_vars(config.load(root)))
+        check(pc["status"] == "fail" and "detail" in pc["violations"][0]["detail"] and "string" in pc["violations"][0]["detail"], pc)
+        util.write_text(rk, k0.replace("data object Root : Route", "data object Root : Route\n    @Serializable\n    data class Detail(val id: String) : Route", 1))
+        check(_g.parity_check(root, root, config.app_vars(config.load(root)))["status"] == "pass", "T5 같은 매개변수")
+        util.write_text(rs, s0); util.write_text(rk, k0)
         check(all(v["status"] == "consumed" for v in design.index(root)["screens"].values()), design.index(root)["screens"])
         evs = metrics.events(root)
         kinds = {e["ev"] for e in evs}
