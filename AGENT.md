@@ -137,7 +137,7 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | retro | 결정적 | 사이클 끝 — 이 사이클 과제만의 요약 숫자를 이력(`cycles/<기능>.history.json`)에 보태고 이전 사이클과 비교한 회고(`.twbuild/reports/<기능>/_retro.md`: 첫 시도 통과율 · 스모크/배차 · 빌드 · 노드당 토큰 · 재작업 규칙 · 멈춤 사유(하네스 vs 개발자) · 제안)를 쓴다. LLM 없음. `twbuild stats --retro <기능>` |
 
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
-- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge · done.
+- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge(화면이면 화면 순회 생성물 `generated(tour)` 커밋) · done(화면 순회 실행 · `_cycle.md`).
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
   merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` · 측정 요약 · 잠금을 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다. plan 이 계약을 바꾸면 생성물까지 `contract(<기능>)` 커밋. `_data.yaml` 의 엔티티는 사이클마다 합집합.
   실측(2026-10-13 헤드리스 lead, sound 화면): 리드가 intake · plan · 배차 · 결정(D-33 확정 · D-35→D-39 뒤집기)을 혼자 처리했고 19턴 · 8.6분 · $8.56(개발자 제외). 멈춤 원인은 하네스 버그(워크트리 디코딩 설정 · 생성물 누락 · 훅 거짓 양성 · 재작업 프롬프트 누락)였고 전부 고쳤다.
@@ -168,6 +168,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 |---|---|---|
 | 빌드 · 실행 | 두 앱이 빌드되고 크래시 없이 뜨는가 — 기기 층(`device.py`): 부팅된 iPhone 시뮬레이터(없으면 가장 새 런타임을 부팅) · adb 기기에 설치 → 실행 → 5초 뒤 살아 있음 → 종료. 모든 명령에 시간 제한. 도구 · 기기 · 산출물이 없거나 시간이 넘으면 "못 잼"(머지를 막지 않고 보고서에 남는다 · fail 은 막는다) | 씀 (config `smoke.device`: merge = 다른 층을 다 통과한 시도에만 · every · off) |
 | 트리 정합성 (정적) | 트리의 노드 ID · `if` · `list` · `on_*` 가 양쪽 코드에 있음 · UiState 필드 · Action · Route · 데이터 객체 이름 · 메서드가 iOS = Android · Route 파라미터는 단순 값(ID) · 토큰과 값이 맞는 곳은 토큰 · 트리에 없는 직접값 없음 · 클래스 노드는 카탈로그 컴포넌트 · 리소스 양쪽 등록 | 안 씀 |
+| 화면 순회 | 한 번 실행으로 머지된 모든 화면에 실제로 들어가 찍히는가 — `tour.py`: 트리 `on_click` · 플랜 interactions 에서 화면 이동 그래프를 뽑아(핸들러 이름에 화면 이름 · `Route.<화면>` · 셸 탭 · `skip*` = 첫 실행 관문) 깊이 우선으로 걷는다 — 들어가 찍고, 닫는 노드(close · hide · dismiss, 시트 뒤 배경막은 뒤로)나 셸의 부모 탭으로 돌아온다, 닫는 노드가 없으면 iOS 는 다시 띄워 되밟고 Android 는 시스템 뒤로. 생성물 `TwScreenTour`(XCUITest · Compose UI 테스트)는 머지마다 다시 쓰고(`generated(tour)` 커밋), 사이클 끝(done)에 두 플랫폼에서 새로 설치해 한 번 돈다 → `.twbuild/reports/<기능>/tour/<화면>-<플랫폼>.png` · `_cycle.md` 표. 실패는 그 자리 화면(`fail-*`)과 함께 보고만 한다(이미 머지됨) | 씀 (config `smoke.tour`: done · off) |
 | 계약 | openapi 응답 예시 전부(example · examples · 스키마 example · $ref 응답)를 생성 모델로 디코딩 — `gen.decode_check()`: iOS 는 swiftc 임시 실행 파일, Android 는 생성 JUnit 테스트 `ContractDecodeTest`(init 스크립트로 JUnit). 빌드 층 통과 뒤 매 스모크 · 셋업 selfcheck 에서도 | 안 씀 |
 
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
@@ -238,7 +239,7 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 | 개발자 과제 | `SubagentStart` → `SubagentStop` 훅 (`agent_id`) | 구현. 안의 빌드 · `check` 는 따로 |
 | 사람 대기 · 기기 대기 | `blocked` → 재개 · 기기 잠금 대기 | 성능에서 뺀다 |
 
-- 화면 과제 프롬프트의 플랜 경로는 메인 레포 절대 경로다(`.twbuild/` 는 gitignore 라 워크트리에 없다). 기기 스크린샷은 앱 실행 직후(진입 화면)만 찍는다 — 화면별 딥링크 촬영은 나중에.
+- 화면 과제 프롬프트의 플랜 경로는 메인 레포 절대 경로다(`.twbuild/` 는 gitignore 라 워크트리에 없다). 기기 층 스크린샷은 앱 실행 직후(진입 화면)만 찍는다 — 화면별 촬영은 사이클 끝 화면 순회(6장)가 한다.
 - 지표: 시간(위 구간 · 빌드 `build_ms` · 기기 `device_ms` — smoke 이벤트) · 화면별 시도 횟수 · 첫 시도 통과율 · 실패 층 · 규칙 ID별 위반 · `blocked` 사유 · decide 수 ·
   토큰(입력 · 출력 · 캐시 — `SubagentStop` 때 트랜스크립트 usage 합산) · 못 잼 수.
 - 비교: 트리 노드 수로 나눈 값(노드당 시간 · 토큰). 모든 기록에 플러그인 버전 · 커밋 · 모델 · 설정 해시를 붙인다.
@@ -295,7 +296,7 @@ min_os: {ios: 17, android: 26}    # @Observable = iOS 17+. 첫 머지 뒤 잠김
 app: {name: "", product: "", id: ""}   # interview 가 채운다. product = ASCII PascalCase, id = com.example.<slug> (첫 머지 뒤 잠김)
 auth: {providers: [email, apple, google]}
 setup: {build: true}             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드
-smoke: {device: merge}            # every | merge | off
+smoke: {device: merge, tour: done}   # device: every | merge | off · tour: done(사이클 끝 화면 순회) | off
 budget: {attempts_per_screen: 5}
 design:
   fetch: {include: [], exclude: [], max_bytes: 262144}
@@ -346,4 +347,5 @@ agents:
 
 붙인 것(2026-10-14~16): review · fix 분류 · retro(4장) · 스크린샷(기기 층이 살아 있을 때 `.twbuild/reports/<기능>/<화면>-<플랫폼>.png`, 증거 보고서에 링크) · 크기 예산(build 층이 산출물 바이트를 재고 `budget.app_bytes.<플랫폼>` 을 넘으면 fail) · 에이전트 교체 탈출구(`agents.<플랫폼>.fallback` · `fallback_after`, 기본 3회째부터) · 메인 세션 격리(H8, `lead.edit_apps`) · 승격 루프(`twbuild decide promote D-xx [ios|android]` → `.claude/rules/<플랫폼>/promoted.md`).
 아이콘 연결(2026-10-16): 트리 svg → `TwIcon`(Swift) · `TwIcons`(Kotlin) 생성물 · 초안 호출 · T11.
+화면 순회(2026-10-17): 골격이 UI 테스트 환경을 깐다(iOS `<product>UITests` 타깃 + `UITests/TwTour.swift`, Android androidTest 의존성 · 러너 + `TwTour.kt`; 골격 이전 앱은 `twbuild tour write` 가 채운다) · 걷기 테스트 생성 · 사이클 끝 실행(6장). CLI `twbuild tour [plan|write|ios|android]`. 실측: 사운드스케이프 7화면 iOS 37초 · Android 48초, 처음 돌린 날 두 플랫폼의 "카드 → 재생 화면" 미연결(남은 TODO)을 찾았다.
 남은 것: 툴 장기 메모리 · 생성기 스타일 규칙 승격(번역표로 올리기) · 기기 접근성 트리 덤프 비교 · 백엔드 API 스모크 · 계약 옵션(실시간 · 업로드) · 문구 키 · 백엔드 개발자 · 에이전트 팀(팀원 간 메시지).

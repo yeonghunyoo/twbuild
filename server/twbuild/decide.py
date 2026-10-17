@@ -173,14 +173,14 @@ def cli(argv, cwd):
         plats = tuple(p for p in argv[2:] if p in ("ios", "android")) or ("ios", "android")
         d = promote(cwd, argv[1], plats)
         return 0, f"{d['id']} 승격: {', '.join(plats)} rules (.claude/rules/<플랫폼>/promoted.md)"
-    if argv[0] == "flip" and len(argv) >= 3:
-        d = flip(cwd, argv[1], " ".join(argv[2:]))
-        return 0, f"{d['flips']} 를 뒤집어 {d['id']} 로 확정: {d['text']}"
     by = "lead"
-    if "--by" in argv:
+    if "--by" in argv:                                   # flip 도 받는다 (실측: flip 뒤의 --by 가 결정 본문에 붙었다)
         i = argv.index("--by")
         by = argv[i + 1] if i + 1 < len(argv) else ""
         argv = argv[:i] + argv[i + 2:]
+    if argv[0] == "flip" and len(argv) >= 3:
+        d = flip(cwd, argv[1], " ".join(argv[2:]), by)
+        return 0, f"{d['flips']} 를 뒤집어 {d['id']} 로 확정: {d['text']}"
     if len(argv) < 2:
         raise DecideError('decide <노드 ID> "<해석>" --by ios|android|lead')
     root, d, new = record(cwd, argv[0], " ".join(argv[1:]), by)

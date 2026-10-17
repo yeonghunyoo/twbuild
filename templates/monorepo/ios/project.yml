@@ -13,6 +13,8 @@ settings:
     CODE_SIGN_STYLE: Automatic
 targets:
   {{product}}:
+    scheme:
+      testTargets: [{{product}}UITests]
     type: application
     platform: iOS
     sources:
@@ -26,3 +28,16 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_CFBundleDisplayName: "{{name}}"
         SWIFT_STRICT_CONCURRENCY: complete
+  # twbuild: screen tour UI tests — UITests/TwTour.swift (helper) · TwScreenTour.swift (generated from the layout trees)
+  {{product}}UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: {{product}}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: {{id}}.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: {{product}}

@@ -15,6 +15,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"     // screen tour (androidTest/TwScreenTour)
         // Switching to production is this one value (API_BASE_URL in .env.local → build config).
         buildConfigField("String", "API_BASE_URL", "\"${System.getenv("API_BASE_URL") ?: "http://10.0.2.2:8787"}\"")
     }
@@ -49,4 +50,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation("junit:junit:4.13.2")      // 생성된 계약 디코딩 테스트(ContractDecodeTest)가 쓴다
+    // twbuild: screen tour (androidTest) — TwTour.kt (helper) · TwScreenTour.kt (generated from the layout trees)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

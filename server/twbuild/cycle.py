@@ -16,7 +16,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, setup, tokens, tree, util, yaml_lite
+from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, setup, tokens, tour, tree, util, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -748,6 +748,10 @@ def n_merge(s):
     git.commit_paths(root, f"ledger({feature}/{task['id']}): index · decisions · brief · metrics",
                      os.path.join("design", "index.json"), os.path.join(".claude", "rules", "team"), os.path.join(util.FEATURES_DIR, feature),
                      summary_rel, os.path.join(util.TW_DIR, config.LOCK))
+    if task["kind"] == "screen":                         # 화면 순회 — 머지된 화면으로 걷기 테스트를 다시 쓴다 (생성물, 결정적)
+        tour_files = tour.write(root, cfg)
+        if tour_files:
+            git.commit_paths(root, f"generated(tour): screen tour after {feature}/{task['id']}", *tour_files)
     reports = list(s.get("reports") or []) + [rep]
     cursor = s.get("cursor", 0) + 1
     return {"phase": "build" if cursor < len(s.get("order") or []) else "done", "cursor": cursor, "reports": reports, "blocked": None,
@@ -772,10 +776,34 @@ def n_blocked(s):
     return {"phase": "build", "blocked": None, "attempts": attempts, "log": ["blocked:resume"]}
 
 
+def tour_section(root, feature, cfg):
+    """사이클 끝 화면 순회(6장 기기 층) — 머지된 모든 화면을 한 번 실행으로 돌며 찍는다. 막지 않는다(이미 머지됐다): 결과 · 실패 자리를 보고서에 남긴다."""
+    if (cfg.get("smoke") or {}).get("tour", "done") == "off":
+        return ""
+    if not tour.expected(root, cfg):
+        return ""
+    out_dir = os.path.join(root, REPORTS, feature, "tour")
+    L = ["## 화면 순회 (한 번 실행으로 모든 화면)", "", "| 플랫폼 | 결과 | 내용 |", "|---|---|---|"]
+    shots = {}
+    for p in cfg.get("platforms") or []:
+        r = tour.run(root, p, config.app_vars(cfg), out_dir)
+        mark = {"pass": "✅", "fail": "❌"}.get(r["status"], "— 못 잼")
+        L.append(f"| {p} | {mark} | {leaks.mask_all(r['detail'])} |")
+        for k, v in r["screens"].items():
+            shots.setdefault(k, {})[p] = os.path.relpath(v, os.path.join(root, REPORTS, feature))
+        if r.get("fail_shot"):
+            L.append(f"| | | 실패한 자리: `{os.path.relpath(r['fail_shot'], root)}` |")
+    if shots:
+        L += ["", "| 화면 | " + " | ".join(cfg.get("platforms") or []) + " |", "|---" * (1 + len(cfg.get("platforms") or [])) + "|"]
+        L += [f"| {k} | " + " | ".join(f"`{shots[k][p]}`" if p in shots[k] else "—" for p in cfg.get("platforms") or []) + " |" for k in sorted(shots)]
+    return "\n".join(L) + "\n"
+
+
 def n_done(s):
     root, feature = s["root"], s["feature"]
     reps = s.get("reports") or []
     rep = f"# {feature} — 사이클 완료\n\n화면 {len([t for t in s.get('order') or [] if t['kind'] == 'screen'])}개 머지. 되돌리기 명령은 화면별 보고서에 있다.\n\n" + "\n".join(reps)
+    rep += "\n" + tour_section(root, feature, config.load(root))
     util.write_text(os.path.join(root, REPORTS, feature, "_cycle.md"), rep)
     return {"phase": "done", "log": ["done"]}
 
