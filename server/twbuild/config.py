@@ -12,6 +12,7 @@ ARCHITECTURES = ("mvvm-udf",)
 AUTH_PROVIDERS = ("email", "apple", "google")
 SMOKE_DEVICE = ("every", "merge", "off")
 SMOKE_TOUR = ("done", "off")          # 화면 순회 — 사이클 끝에 한 번 · 안 돈다
+SMOKE_VISUAL = ("review", "off")      # 시각 층 — 머지 전 lead 가 디자인 | iOS | Android 비교 이미지를 본다 · 안 본다
 
 DEFAULTS = {
     "platforms": ["ios", "android"],
@@ -19,7 +20,7 @@ DEFAULTS = {
     "min_os": {"ios": 17, "android": 26},
     "app": {"name": "", "product": "", "id": ""},        # product: ASCII PascalCase (타겟 · 모듈 이름) · id: com.example.<slug>
     "auth": {"providers": ["email", "apple", "google"]},
-    "smoke": {"device": "merge", "tour": "done"},
+    "smoke": {"device": "merge", "tour": "done", "visual": "review"},
     "budget": {"attempts_per_screen": 5},
     "lead": {"edit_apps": False},            # H8 — 메인 세션이 apps/ 를 직접 쓰는 것을 허용할지
     "design": {"fetch": {"include": [], "exclude": [], "max_bytes": 262144}},
@@ -109,6 +110,8 @@ def problems(cfg):
         out.append(f"smoke.device 는 {list(SMOKE_DEVICE)} 중 하나다")
     if (cfg.get("smoke") or {}).get("tour", "done") not in SMOKE_TOUR:
         out.append(f"smoke.tour 는 {list(SMOKE_TOUR)} 중 하나다")
+    if (cfg.get("smoke") or {}).get("visual", "review") not in SMOKE_VISUAL:
+        out.append(f"smoke.visual 은 {list(SMOKE_VISUAL)} 중 하나다")
     b = (cfg.get("budget") or {}).get("attempts_per_screen")
     if not isinstance(b, int) or b < 1:
         out.append("budget.attempts_per_screen 은 1 이상의 정수다")

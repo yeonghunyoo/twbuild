@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """PreToolUse 검문 훅 — Claude Design 커넥터(mcp__*claude-design__*) 읽기를 design run 의 허용 목록 안에서만 통과시킨다 (AGENT.md 2장).
 
-쓰기 · 공유 · 미리보기는 guard.py(H7)가 항상 막는다. 여기서는 읽기 도구만 본다:
+쓰기 · 공유는 guard.py(H7)가 항상 막는다. 여기서는 읽기 도구와 미리보기를 본다:
   list_projects · get_project · list_design_systems  항상 통과 (메타데이터)
   list_files                                        run 안 · 그 run 의 프로젝트만
   read_file                                         run 안 · 허용 목록(고른 화면 · 참조 CSS/JSX · 디자인 시스템 파일) · 거부 목록 밖 · 크기 상한 안
+  render_preview                                    run 안 · 그 run 이 받은 화면 .dc.html 만 (기준 이미지 — vis.py)
 판정 코드는 서버의 twbuild.design.allowed() 하나다 — 테스트 · doctor 가 같은 것을 쓴다. 표준 라이브러리만 쓰는 모듈이라 venv 가 없어도 돈다.
 """
 import json

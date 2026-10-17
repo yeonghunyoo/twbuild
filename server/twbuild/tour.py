@@ -161,6 +161,31 @@ def plan_tour(root, only=None):
             "close": {s: _close(lays[s]) for s in screens}, "edges": edges, "unreached": unreached}
 
 
+def _path_to(reached, s):
+    """실행 화면에서 s 까지 누를 것 — [(노드 목록, 핸들러)]."""
+    out = []
+    while s and reached[s]["parent"]:
+        out.insert(0, (reached[s]["ids"], reached[s]["via"]))
+        s = reached[s]["parent"]
+    return out
+
+
+def focus(t, screen):
+    """한 화면만 — 그 화면까지 곧장 가서 찍는다 (스모크의 시각 층). 못 가는 화면이면 None."""
+    if not t.get("start"):
+        return None
+    e = t.get("entry")
+    if e and e["screen"] == screen:
+        return [("shot", screen)]
+    if screen not in t["reached"] or screen in t.get("hosts", []):
+        return None
+    ops = [("expect", e["screen"]), ("tap", [e["skip"]], "first-run gate: " + e["screen"]), ("gone", e["screen"])] if e else []
+    ops.append(("expect", t["start"]))
+    ops += [("tap", ids, via) for ids, via in _path_to(t["reached"], screen)]
+    ops.append(("shot", screen))
+    return ops
+
+
 def walk(t):
     """한 번 실행으로 도는 순서 — [("shot", 화면) | ("tap", [노드], 핸들러) | ("gone", 화면) | ("expect", 화면) | ("back", 화면, [(노드 목록, 핸들러)])].
     깊이 우선: 들어가 찍고, 그 화면에서 갈 곳을 다 돈 뒤 닫고 나온다. 자기 핸들러로 연 화면은 닫는 노드로, 셸 탭으로 연 화면은 셸의 부모 탭으로 돌아온다.
@@ -175,11 +200,7 @@ def walk(t):
             kids.setdefault(p, []).append(s)
 
     def path_to(s):
-        out = []
-        while s and reached[s]["parent"]:
-            out.insert(0, (reached[s]["ids"], reached[s]["via"]))
-            s = reached[s]["parent"]
-        return out
+        return _path_to(reached, s)
 
     ops = []
     if t.get("entry"):
@@ -223,14 +244,14 @@ def _comment(t):
     return L
 
 
-def swift(t, vars_):
+def swift(t, vars_, ops=None, cls="TwScreenTour"):
     L = [f"// {HEADER}"] + [f"// {c}" for c in _comment(t)] + ["import XCTest", "",
-         "@MainActor", "final class TwScreenTour: XCTestCase {",
+         "@MainActor", f"final class {cls}: XCTestCase {{",
          "    override func setUp() { continueAfterFailure = false }", "",
          "    func test_tour() {",
          "        let t = TwTour(self)",
          "        t.launch()"]
-    for op in walk(t):
+    for op in walk(t) if ops is None else ops:
         k = op[0]
         if k == "shot":
             L.append(f"        t.shot({_q(op[1])})")
@@ -247,7 +268,7 @@ def swift(t, vars_):
     return "\n".join(L)
 
 
-def kotlin(t, vars_):
+def kotlin(t, vars_, ops=None, cls="TwScreenTour"):
     L = [f"// {HEADER}"] + [f"// {c}" for c in _comment(t)] + [f"package {vars_['id']}", "",
          "import androidx.compose.ui.test.junit4.createAndroidComposeRule",
          "import androidx.test.ext.junit.runners.AndroidJUnit4",
@@ -255,11 +276,11 @@ def kotlin(t, vars_):
          "import org.junit.Test",
          "import org.junit.runner.RunWith", "",
          "@RunWith(AndroidJUnit4::class)",
-         "class TwScreenTour {",
+         f"class {cls} {{",
          "    @get:Rule val rule = createAndroidComposeRule<MainActivity>()", "",
          "    @Test fun tour() {",
          "        val t = TwTour(rule)"]
-    for op in walk(t):
+    for op in walk(t) if ops is None else ops:
         k = op[0]
         if k == "shot":
             L.append(f"        t.shot({_q(op[1])})")
@@ -406,7 +427,7 @@ def _ios_udid():
     return (booted or [d for d in devs if "iPhone" in d.get("name", "")] or [None])[0]
 
 
-def run_ios(base, vars_, out_dir, timeout=1500):
+def run_ios(base, vars_, out_dir, timeout=1500, cls="TwScreenTour"):
     """xcodebuild test 로 순회 → 첨부 스크린샷을 out_dir/<화면>-ios.png 로. → {"status", "detail", "screens": {화면: png}, "failures": [..], "log"}"""
     log = []
     t0 = time.time()
@@ -427,7 +448,7 @@ def run_ios(base, vars_, out_dir, timeout=1500):
     os.makedirs(out_dir, exist_ok=True)
     rc, out = _sh(["xcodebuild", "test", "-project", f"{vars_['product']}.xcodeproj", "-scheme", vars_["product"],
                    "-destination", f"platform=iOS Simulator,id={udid}", "-derivedDataPath", os.path.join(base, ".twbuild", "derived", "ios-tour"),
-                   "-resultBundlePath", rb, "-only-testing", f"{vars_['product']}UITests/TwScreenTour", "CODE_SIGNING_ALLOWED=NO"],
+                   "-resultBundlePath", rb, "-only-testing", f"{vars_['product']}UITests/{cls}", "CODE_SIGNING_ALLOWED=NO"],
                   cwd=app, timeout=timeout, log=log)
     failures = sorted(set(re.findall(r"tour: ([^\n\"]+)", out)))
     screens = {}
@@ -447,7 +468,7 @@ def run_ios(base, vars_, out_dir, timeout=1500):
     return _result(screens, failures, rc == 0, t0, log, "" if rc == 0 else f"xcodebuild exit {rc}")
 
 
-def run_android(base, vars_, out_dir, tools=None, timeout=1500):
+def run_android(base, vars_, out_dir, tools=None, timeout=1500, cls="TwScreenTour"):
     """gradle 로 앱 · 테스트 APK 설치 → am instrument → run-as 로 PNG 를 꺼낸다. → run_ios 와 같은 모양"""
     from . import probe
     log = []
@@ -468,7 +489,7 @@ def run_android(base, vars_, out_dir, tools=None, timeout=1500):
     rc, out = _sh([gradlew, "installDebug", "installDebugAndroidTest", "-q"], cwd=app, timeout=timeout, log=log, env=env)
     if rc != 0:
         return {"status": "fail", "detail": f"테스트 APK 빌드 · 설치 실패 (exit {rc})", "screens": {}, "failures": [next((l.strip() for l in out.splitlines() if l.startswith("e: ")), out.strip().splitlines()[-1] if out.strip() else "")[:300]], "log": "\n".join(log)[-6000:]}
-    rc, out = _sh([adb, "-s", serial, "shell", "am", "instrument", "-w", "-e", "class", f"{pkg}.TwScreenTour", f"{pkg}.test/androidx.test.runner.AndroidJUnitRunner"],
+    rc, out = _sh([adb, "-s", serial, "shell", "am", "instrument", "-w", "-e", "class", f"{pkg}.{cls}", f"{pkg}.test/androidx.test.runner.AndroidJUnitRunner"],
                   timeout=timeout, log=log)
     failures = sorted(set(re.findall(r"tour: ([^\n]+)", out)))
     screens = {}
@@ -501,13 +522,52 @@ def _result(shots, failures, ok, t0, log, extra):
     return out
 
 
-def run(base, platform, vars_, out_dir, tools=None):
+def run(base, platform, vars_, out_dir, tools=None, cls="TwScreenTour"):
     if os.environ.get("TWBUILD_NO_BUILD"):
         return {"status": "unmeasured", "detail": "TWBUILD_NO_BUILD", "screens": {}, "failures": [], "log": ""}
     try:
-        return run_ios(base, vars_, out_dir) if platform == "ios" else run_android(base, vars_, out_dir, tools)
+        return run_ios(base, vars_, out_dir, cls=cls) if platform == "ios" else run_android(base, vars_, out_dir, tools, cls=cls)
     except Exception as e:                                        # noqa: BLE001 — 순회가 하네스를 죽이면 안 된다
         return {"status": "unmeasured", "detail": f"내부 오류: {type(e).__name__}: {e}", "screens": {}, "failures": [], "log": ""}
+
+
+FOCUS = "TwFocusTour"
+
+
+def focus_files(root, wt_vars, screen, cfg):
+    """시각 층의 한 화면 순회 — {상대 경로: 본문}. 트리 · 플랜은 메인 레포, 화면은 머지된 것 + 이 화면. 못 가면 {}."""
+    t = plan_tour(root, _built(root) | {screen})
+    ops = focus(t, screen)
+    if not ops:
+        return {}
+    plats = cfg.get("platforms") or []
+    out = {}
+    if "ios" in plats:
+        out[os.path.join("apps", "ios", "UITests", f"{FOCUS}.swift")] = swift(t, wt_vars, ops, FOCUS)
+    if "android" in plats:
+        out[android_test_rel(wt_vars, f"{FOCUS}.kt")] = kotlin(t, wt_vars, ops, FOCUS)
+    return out
+
+
+def run_focus(root, wt, platform, vars_, screen, out_dir, cfg=None, tools=None):
+    """워크트리에서 그 화면까지만 돌아 찍는다 — 테스트 파일은 잠깐 두었다 지운다(개발자 브랜치에 남기지 않는다).
+    → run() 과 같은 모양 + "shot": 그 화면 PNG | None"""
+    cfg = cfg or config.load(root)
+    files = {rel: text for rel, text in focus_files(root, vars_, screen, cfg).items() if rel.startswith(os.path.join("apps", platform))}
+    if not files:
+        return {"status": "unmeasured", "detail": f"{screen}: 순회로 갈 수 없는 화면 (트리 · 플랜에 이동이 없다)", "screens": {}, "failures": [], "log": "", "shot": None}
+    for rel, text in files.items():
+        util.write_text(os.path.join(wt, rel), text)
+    try:
+        r = run(wt, platform, vars_, out_dir, tools, cls=FOCUS)
+    finally:
+        for rel in files:
+            try:
+                os.remove(os.path.join(wt, rel))
+            except OSError:
+                pass
+    r["shot"] = r["screens"].get(screen)
+    return r
 
 
 def cli(argv, root):

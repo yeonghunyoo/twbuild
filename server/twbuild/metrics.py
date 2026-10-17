@@ -155,6 +155,11 @@ def screen_rows(root, feature=None, since=None):
             r["passed"] = r["passed"] or bool(e.get("passed"))
             if r["first_try"] is None:
                 r["first_try"] = bool(e.get("passed"))
+        elif e.get("ev") == "visual" and e.get("verdict") == "rework":      # 스모크는 통과했지만 lead 가 시각 검수에서 돌려보냈다
+            r = rows.setdefault((e.get("task"), e.get("platform")), _row())
+            r["passed"] = False
+            if r["attempts"] <= 1:
+                r["first_try"] = False
         elif e.get("ev") == "agent":
             r = rows.setdefault((e.get("task"), e.get("platform")), _row())
             r["agents"] += 1

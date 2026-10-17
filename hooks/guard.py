@@ -10,7 +10,7 @@ stdlib 만 쓰고 서버 코드를 import 하지 않는다 — 훅이 서버에 
   H4 보호 구역                     design/ · api/generated/ · api/fragments/ · .twbuild/(tasks/ 제외) · .git/ 에 쓰기 · 삭제
   H5 민감 파일 · 환경 변수 덤프     .env · 키 · 인증서 · ~/.ssh 등 읽기/쓰기/검색, env/printenv 전체 출력
   H6 설치 · 권한 상승              sudo · brew install · pip/npm/gem 전역 설치 · curl|sh — 설치는 사람이 한다(report 가 명령을 안내)
-  H7 Claude Design 쓰기            쓰기 · 삭제 · 복사 · 공유 · 멤버 · 대화 · 미리보기 — 읽기 전용이다
+  H7 Claude Design 쓰기            쓰기 · 삭제 · 복사 · 공유 · 멤버 · 대화 — 읽기 전용이다 (미리보기는 design run 안에서만 — design_guard)
 """
 import fnmatch
 import json
@@ -43,7 +43,7 @@ MUTATORS = re.compile(r"(^|[\s;&|(])(rm|rmdir|mv|cp|tee|sed\s+-i|truncate|touch|
 DELETE = re.compile(r"(^|[\s;&|(])(rm|rmdir|git\s+(rm|clean|worktree\s+remove|branch\s+-D))\b")
 REDIRECT = re.compile(r">{1,2}\s*([^\s;&|]+)")
 DESIGN_WRITE = re.compile(r"^mcp__.*claude[-_]design__(write_files|delete_files|copy_files|create_project|add_member|remove_member|"
-                          r"update_member_role|update_sharing|put_conversation|render_preview|finalize_plan|create_support_js|ack_comments)$")
+                          r"update_member_role|update_sharing|put_conversation|finalize_plan|create_support_js|ack_comments)$")
 
 GUIDE = {
     "H1": "[H1] 원격 push 는 하네스가 하지 않는다 — 머지는 로컬 main 까지다. 사람이 직접 push 한다.",

@@ -256,7 +256,8 @@ def guard_hook():
         deny("Read", {"file_path": os.path.join(root, ".env.local")}, "H5")
         deny("Read", {"file_path": "~/.ssh/id_rsa"}, "H5")
         deny("mcp__claude-design__write_files", {"project_id": "x"}, "H7")
-        deny("mcp__plugin_x_claude-design__render_preview", {}, "H7")
+        deny("mcp__plugin_x_claude-design__update_sharing", {}, "H7")
+        allow("mcp__plugin_x_claude-design__render_preview", {"project_id": "x", "path": "a.dc.html"})      # guard 는 통과 — run 판정은 design_guard (D1~D4)
         allow("Bash", {"command": "xcodebuild -scheme App build"})
         allow("Bash", {"command": "rm -rf apps/ios/DerivedData"})
         allow("Bash", {"command": "printenv API_BASE_URL"})
@@ -381,6 +382,8 @@ def design_run_flow():
         rec = design.capture(root, "mini.dc.html", MINI, "e1", "P1")
         check(rec["dest"] == "design/mini/mini.dc.html" and util.read_text(os.path.join(root, rec["dest"])) == MINI and rec["bytes"] == len(MINI.encode()), rec)
         check(A("read_file", "P1", "ios-frame.jsx")[0], "화면을 받으면 참조 JSX 가 열린다")
+        check(A("render_preview", "P1", "mini.dc.html")[0] and A("render_preview", "P1", "other.dc.html")[1] == "D4"
+              and A("render_preview", "P1", "ios-frame.jsx")[1] == "D4" and A("render_preview", "P2", "mini.dc.html")[1] == "D2", "미리보기는 이 run 이 받은 화면만")
         rec = design.capture(root, "_ds/mini-ds/styles.css", MINI_CSS, "c1", "P1")
         check(rec["dest"] == "design/ds/styles.css", rec)
         out = design.finish(root)
@@ -812,7 +815,7 @@ def redo_merged_screen_keeps_code():
 
 if __name__ == "__main__":
     sys.modules.setdefault("cases", sys.modules[__name__])          # 형제 모듈의 `from cases import case` 가 이 인스턴스를 보게
-    for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts", "cases_icons", "cases_tour"):
+    for _m in ("cases_device", "cases_skills", "cases_gen", "cases_fonts", "cases_icons", "cases_tour", "cases_vis"):
         try:
             __import__(_m)
         except ImportError:

@@ -117,6 +117,11 @@ def checks(root, cfg=None, t=None):
                           "wrapper 있음" if wrapper else (t["gradle"] or "없음"),
                           "brew install gradle (wrapper 생성용 — 한 번만)", "Android 빌드", 2))
         out.append(_check("adb", "adb", bool(t["adb"]), t["adb"] or "없음", "SDK platform-tools 설치", "Android 실행 스모크", 1))
+    if (cfg.get("smoke") or {}).get("visual", "review") != "off":
+        from . import vis
+        ch = vis.chrome()
+        out.append(_check("chrome", "Chrome (헤드리스)", bool(ch), ch or "없음", "Google Chrome 설치 (또는 TWBUILD_CHROME 에 경로)",
+                          "시각 층 — 디자인 기준 이미지 · 비교 이미지", 0))
     out.append(_check("claude_design", "Claude Design 커넥터", None, "서버에서 못 잼 — lead 가 도구 목록(mcp__claude-design__*)으로 확인",
                       "Claude Code 에서 Claude Design 커넥터를 연결한다", "디자인 import", 2))
     probs = config.problems(cfg) + config.locked_problems(root, cfg)          # 첫 머지 뒤 잠긴 값(architecture · min_os · app.id · app.product)

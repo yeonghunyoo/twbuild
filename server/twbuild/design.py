@@ -130,6 +130,10 @@ def allowed(root, tool, project_id, path, run=None, cfg=None):
         return False, "D2", RULES["D2"]
     if tool == "list_files":
         return True, "", ""
+    if tool == "render_preview":                     # 기준 이미지(vis.py) — 이 run 이 받은 화면 파일의 미리보기만
+        path = (path or "").lstrip("./")
+        ok = path.endswith(".dc.html") and any(f["path"] == path for f in run.get("files") or [])
+        return (True, "", "") if ok else (False, "D4", RULES["D4"] + f" (render_preview {path} — 이 run 이 받은 화면 .dc.html 만)")
     if tool != "read_file":
         return False, "D4", RULES["D4"] + f" ({tool})"
     path = (path or "").lstrip("./")
@@ -328,8 +332,9 @@ def reconcile_spec(detected, stored):
     return [{**d, "id": by_sig[_sig(d)]["id"]} if _sig(d) in by_sig else d for d in detected]
 
 
-def finish(root, spec=None, commit=True):
-    """run 을 닫는다 — 트리 · 토큰 생성, 원장 갱신, run 기록, 커밋 + 태그. spec: lead 가 확인한 화면 목록(없으면 자동 감지)."""
+def finish(root, spec=None, commit=True, preview_url=None):
+    """run 을 닫는다 — 트리 · 토큰 생성, 기준 이미지, 원장 갱신, run 기록, 커밋 + 태그. spec: lead 가 확인한 화면 목록(없으면 자동 감지).
+    preview_url: 화면 파일의 render_preview serve_url — 있으면 화면마다 기준 이미지(design/<범위>/shots, vis.py). 남기지 않는다."""
     run = active(root)
     if not run:
         raise DesignError("진행 중인 run 이 없다")
@@ -362,6 +367,15 @@ def finish(root, spec=None, commit=True):
     except icons.IconError as e:
         icon_files = []
         run["icon_error"] = str(e)
+    shots = None
+    if preview_url:
+        from . import vis
+        try:
+            r = vis.design_shots(root, run["scope"], preview_url)
+            shots = {"screens": sorted(r["shots"]), "unreached": r["unreached"]}
+        except vis.VisError as e:
+            shots = {"error": str(e)}                  # 기준 이미지가 없어도 run 은 닫는다 — 시각 비교만 못 잰다
+        run["shots"] = shots
     diff = {"added": [], "changed": [], "removed": []}
     for key, info in screens_out.items():
         cur = idx["screens"].get(key)
@@ -399,7 +413,7 @@ def finish(root, spec=None, commit=True):
     return {"run": run["id"], "scope": run["scope"], "screens": screens_out, "status": statuses, "diff": diff,
             "tokens": {"files": token_files, "unresolved": (tk or {}).get("unresolved", [])} if tk is not None else None,
             "icons": {"files": icon_files, **({"error": run["icon_error"]} if run.get("icon_error") else {})},
-            "commit": committed}
+            "shots": shots, "commit": committed}
 
 
 def summary(root):

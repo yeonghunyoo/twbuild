@@ -77,7 +77,7 @@ def _print_task(out):
 
 
 def _design(a, root):
-    """design start|capture|listing|trial|finish|abort|status — 훅이 없는 자리(테스트 · 수동 import)에서 같은 코드를 부른다."""
+    """design start|capture|listing|trial|finish|shots|abort|status — 훅이 없는 자리(테스트 · 수동 import)에서 같은 코드를 부른다."""
     from twbuild import design, leaks
     sub = a.args[0] if a.args else "status"
     try:
@@ -102,14 +102,25 @@ def _design(a, root):
             print(json.dumps(leaks.mask_all_deep(out), ensure_ascii=False, indent=2))
         elif sub == "finish":
             spec = json.load(open(a.spec, encoding="utf-8")) if a.spec else None
-            out = design.finish(root, spec)
+            out = design.finish(root, spec, preview_url=a.url)
             print(json.dumps(leaks.mask_all_deep(out), ensure_ascii=False, indent=2))
+        elif sub == "shots":
+            from twbuild import vis
+            scope = a.scope or (design.active(root) or {}).get("scope")
+            if not a.url or not scope:
+                print("twbuild design shots --url <render_preview serve_url> [--scope <기능>]", file=sys.stderr)
+                return 2
+            r = vis.design_shots(root, scope, a.url)
+            print(f"기준 이미지 {len(r['shots'])}개: {', '.join(sorted(r['shots']))}" + (f" · 못 간 화면: {', '.join(r['unreached'])}" if r["unreached"] else ""))
         elif sub == "abort":
             run = design.abort(root)
             print(f"{run['id']} 중단" if run else "진행 중인 run 이 없다")
         else:
             print(json.dumps(leaks.mask_all_deep({"active": design.active(root), "summary": design.summary(root)}), ensure_ascii=False, indent=2))
     except design.DesignError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except RuntimeError as e:                     # vis.VisError — 기준 이미지
         print(str(e), file=sys.stderr)
         return 1
     return 0
@@ -130,6 +141,7 @@ def main():
     ap.add_argument("--etag", default="", help="design capture: etag")
     ap.add_argument("--file", default=None, help="design capture/listing/trial: 본문 파일")
     ap.add_argument("--spec", default=None, help="design finish/trial: 화면 spec JSON 파일")
+    ap.add_argument("--url", default=None, help="design finish/shots: render_preview 의 serve_url (기준 이미지, 남기지 않는다)")
     ap.add_argument("--by", default=None, help="decide: ios | android | lead")
     ap.add_argument("--staged", action="store_true", help="scan: 스테이지된 파일만 (pre-commit 훅)")
     ap.add_argument("--port", type=int, default=8787, help="mock: 포트")

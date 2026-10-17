@@ -59,7 +59,7 @@ def _design(fn):
 def design_start(feature: str, project_id: str, screens: list, ds_project_id: str = "", bootstrap: bool = False) -> dict:
     """Open a design run for `feature`: afterwards the Claude Design connector may read the listed .dc.html screens (plus what they reference and the design-system files) — the hooks capture them into design/. bootstrap=true also allows the design-system catalog (first cycle)."""
     return _design(lambda: {"ok": True, "run": design.start(ROOT, feature, project_id, screens, ds_project_id or None, bootstrap=bootstrap),
-                            "message": "Run opened. Read the screen files with the connector (read_file); then design_trial, confirm screen ids with the user, design_finish(spec)."})
+                            "message": "Run opened. Read the screen files with the connector (read_file); then design_trial, confirm screen ids with the user, render_preview(project_id, <screen .dc.html>) and design_finish(spec, preview_url=<its serve_url>)."})
 
 
 @mcp.tool()
@@ -73,14 +73,15 @@ def design_trial(spec: list | None = None) -> dict:
         for f in run["files"]:
             if f["path"].endswith(".dc.html"):
                 out.append({"file": f["dest"], **design.trial(ROOT, util.read_text(os.path.join(ROOT, f["dest"]), ""), spec)})
-        return {"ok": True, "trials": out, "message": "Confirm the screen ids with the user (rename with spec), then design_finish(spec)."}
+        return {"ok": True, "trials": out, "message": "Confirm the screen ids with the user (rename with spec), then render_preview the screen .dc.html and design_finish(spec, preview_url=<serve_url>)."}
     return _design(go)
 
 
 @mcp.tool()
-def design_finish(spec: list | None = None) -> dict:
-    """Close the active design run: write layout trees and tokens, update the ledger, commit + tag `design-run/R-000N`. `spec` = the confirmed screens list from design_trial (ids may be renamed)."""
-    return _design(lambda: {"ok": True, **design.finish(ROOT, spec), "message": "Design run finished. Continue the cycle: submit the intake task."})
+def design_finish(spec: list | None = None, preview_url: str = "") -> dict:
+    """Close the active design run: write layout trees and tokens, update the ledger, commit + tag `design-run/R-000N`. `spec` = the confirmed screens list from design_trial (ids may be renamed).
+    `preview_url` = the `serve_url` from the connector's render_preview of the screen .dc.html (call it right before this): the harness renders one reference image per screen (design/<feature>/shots) for the visual check. It is used once and never stored."""
+    return _design(lambda: {"ok": True, **design.finish(ROOT, spec, preview_url=preview_url or None), "message": "Design run finished. Continue the cycle: submit the intake task."})
 
 
 @mcp.tool()

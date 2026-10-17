@@ -4,9 +4,10 @@
                                         ▲             │         └─ done → END
                                         └── blocked ◀─┘ (예산 소진 · 개발자 blocked)
   smoke 실패 → prepare (재작업, 화면당 예산 안)
+  smoke 통과 + 기준 이미지 → visual(lead 가 비교 이미지를 보고 accept → merge · rework → prepare)
 
 멈춤: task(intake · plan · build → submit) · blocked(사람이 풀면 submit 으로 재개).
-묻는 노드(intake · plan · dispatch · blocked)는 interrupt 만 하고, 실행 노드(prepare · smoke · merge)는 부작용만 한다.
+묻는 노드(intake · plan · review · dispatch · visual · blocked)는 interrupt 만 하고, 실행 노드(prepare · smoke · merge)는 부작용만 한다.
 """
 import operator
 import os
@@ -16,7 +17,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, setup, tokens, tour, tree, util, yaml_lite
+from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, setup, tokens, tour, tree, util, vis, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -59,7 +60,7 @@ def n_intake(s):
         "Start a feature cycle. 1) Ask the user (AskUserQuestion, Korean) which feature to build and, if its design is not imported yet, "
         "which Claude Design project and screen files to import. 2) If a design run is needed: call design_start(feature, project_id, screens), "
         "read the listed .dc.html (and whatever list_files shows that the hook allows) with the Claude Design connector — the capture hook "
-        "writes them into design/ — then design_trial() to see the detected screens, confirm/rename screen ids with the user, and design_finish(spec). "
+        "writes them into design/ — then design_trial() to see the detected screens, confirm/rename screen ids with the user, render_preview the screen .dc.html and design_finish(spec, preview_url=<serve_url>) (reference images for the visual check). "
         "3) Write a short brief (requirements for this feature, Korean, from the user's words). "
         "Submit {feature, brief, screens?}. `features` lists features that already have an imported design.",
         {"feature": "string (lowercase, e.g. forest)", "brief": "string (Korean, multi-line)", "screens": "optional list of screen ids to build in this cycle"},
@@ -434,6 +435,10 @@ def _rework_text(s, task_id, platform=None):
                 lg = d.get("log") or ""
                 tail = gate.tail(lg) if isinstance(lg, str) and os.path.isfile(lg) else str(lg)[-1500:]
                 out.append(f"- [{p}] {label}: {d.get('detail')}\n```\n{tail}\n```")
+        vz = r.get("visual") or {}
+        if vz.get("status") == "fail":
+            out.append(f"- [{p}] visual check failed (lead compared the design with your screen on the device): {vz.get('detail')}"
+                       + (f"\n  side-by-side image (design | ios | android): {vz['image']}" if vz.get("image") else ""))
         for v in (r.get("parity") or {}).get("violations") or []:
             line = f"- [both] {v['rule']}: {v['detail']}"
             if line not in out:                 # 패리티는 양쪽 결과에 같은 내용이 실린다 — 한 번만
@@ -585,8 +590,12 @@ def n_smoke(s):
         else:
             r["device"] = {"status": "unmeasured", "detail": "다른 층이 실패한 시도 — 머지 직전에만 잰다(smoke.device: merge)"}
     ok = ok and all(r["device"]["status"] != "fail" for r in res.values())
+    if ok:
+        visual_layer(root, feature, task, wts, res, cfg)                  # 시각 층(6장) — 다른 층을 다 통과한 시도에만, lead 가 본다
     util.write_json(os.path.join(root, RESULTS, feature, f"{task['id']}.json"), {"t": util.now(), "attempt": (s.get("attempts") or {}).get(task["id"]), "pass": ok, "results": res})
     results = {**(s.get("results") or {}), task["id"]: res}
+    if ok and any((r.get("visual") or {}).get("status") == "review" for r in res.values()):
+        return {"phase": "visual", "results": results, "smoked": task["id"], "log": [f"smoke:visual:{task['id']}"]}
     if ok:
         return {"phase": "merge", "results": results, "smoked": task["id"], "log": [f"smoke:pass:{task['id']}"]}
     retries = (s.get("retries") or {}).get(task["id"], 0)
@@ -663,7 +672,96 @@ def classify_failure(res, retries=0):
 
 
 def _after_smoke(s):
-    return {"merge": "merge", "blocked": "blocked", "retry": "smoke"}.get(s.get("phase"), "prepare")
+    return {"merge": "merge", "blocked": "blocked", "retry": "smoke", "visual": "visual"}.get(s.get("phase"), "prepare")
+
+
+# ─────────────────────────── 시각 층 ───────────────────────────
+
+def visual_layer(root, feature, task, wts, res, cfg):
+    """디자인 기준 이미지 ↔ 기기 화면 (vis.py) — 화면 과제만. 워크트리 앱을 그 화면까지 돌아 찍고, 디자인 | iOS | Android 비교 이미지를 만든다.
+    판정은 lead 가 한다(visual 노드). res[p]["visual"] = {"status": review|unmeasured, "shot", "image", "score", "hot", "detail"}"""
+    policy = (cfg.get("smoke") or {}).get("visual", "review")
+    plats = list(wts)
+    def mark(st, detail, **kw):
+        for p in plats:
+            res[p]["visual"] = {"status": st, "detail": detail, **kw}
+    if policy == "off":
+        return mark("unmeasured", "설정 smoke.visual: off")
+    if task["kind"] != "screen":
+        return mark("unmeasured", "화면 과제가 아니다")
+    t = tour.plan_tour(root, tour._built(root) | {task["id"]})
+    target = t["start"] if task["id"] in (t.get("hosts") or []) else task["id"]      # 셸은 첫 슬롯 화면과 같이 보인다
+    ref = vis.reference(root, target)
+    if not ref:
+        return mark("unmeasured", f"기준 이미지 없음 — design run 을 미리보기와 함께 닫는다 (design_finish preview_url)")
+    if not vis.chrome():
+        return mark("unmeasured", "Chrome 없음 — 비교 이미지를 못 만든다")
+    vars_ = config.app_vars(cfg)
+    out_dir = os.path.join(root, REPORTS, feature, "visual", task["id"])
+    shots = {}
+    for p in plats:
+        r = tour.run_focus(root, wts[p], p, vars_, target, out_dir, cfg)
+        if r.get("shot"):
+            shots[p] = r["shot"]
+            res[p]["visual"] = {"status": "review", "shot": r["shot"], "detail": r["detail"]}
+        else:
+            fail = "; ".join(r.get("failures") or []) or r.get("detail") or ""
+            res[p]["visual"] = {"status": "unmeasured", "detail": f"그 화면까지 못 갔다: {leaks.mask_all(fail)}"[:600],
+                                **({"fail_shot": r["fail_shot"]} if r.get("fail_shot") else {})}
+    if not shots:
+        return
+    img = os.path.join(out_dir, f"{target}-compare.png")
+    try:
+        scores = vis.compare(ref, sorted(shots.items()), img, title=f"{feature}/{task['id']} — design | " + " | ".join(sorted(shots)))
+    except vis.VisError as e:
+        for p in shots:
+            res[p]["visual"] = {**res[p]["visual"], "status": "unmeasured", "detail": f"비교 이미지 실패: {e}"}
+        return
+    for p in shots:
+        res[p]["visual"] = {**res[p]["visual"], "image": img, "design": ref, **(scores.get(p) or {})}
+
+
+def n_visual(s):
+    """묻는 노드 — lead 가 비교 이미지를 보고 플랫폼마다 accept · rework 를 고른다. rework 는 메모가 재작업 프롬프트로 간다."""
+    root, feature = s["root"], s["feature"]
+    task = _task_now(s)
+    cfg = config.load(root)
+    res = {p: dict(r) for p, r in ((s.get("results") or {}).get(task["id"]) or {}).items()}
+    pending = {p: r["visual"] for p, r in res.items() if (r.get("visual") or {}).get("status") == "review"}
+    image = next((v.get("image") for v in pending.values() if v.get("image")), None)
+    payload = _task(
+        "visual",
+        f"Visual check for `{task['id']}`: Read the side-by-side image (`image`: design | ios | android, red boxes = cells that differ most; "
+        "`scores` 0~1, lower is closer — a hint only: data, clock, status bar and fonts always differ). Judge what a designer would flag: "
+        "wrong colors or opacity, missing or extra elements, overlapping or misplaced blocks, wrong control styles, broken spacing. "
+        "Ignore content data, the status bar, the clock and platform-native chrome. "
+        "Submit per platform {verdict: accept|rework, notes: what to fix, concrete (element · expected · actual)}.",
+        {p: "{verdict: accept|rework, notes: string}" for p in pending},
+        image=image, scores={p: {"score": v.get("score"), "hot": v.get("hot")} for p, v in pending.items()},
+        shots={p: v.get("shot") for p, v in pending.items()}, design=next((v.get("design") for v in pending.values()), None),
+    )
+    rework = []
+    for p, v in pending.items():
+        ans = (payload or {}).get(p) if isinstance((payload or {}).get(p), dict) else {"verdict": str((payload or {}).get(p) or "accept")}
+        verdict = "rework" if str(ans.get("verdict", "")).lower().startswith("rework") else "accept"
+        res[p]["visual"] = {**v, "status": "fail" if verdict == "rework" else "pass", "verdict": verdict,
+                            "detail": str(ans.get("notes") or ("lead accepted" if verdict == "accept" else "lead asked for rework"))[:2000]}
+        if verdict == "rework":
+            rework.append(p)
+    results = {**(s.get("results") or {}), task["id"]: res}
+    prev = util.read_json(os.path.join(root, RESULTS, feature, f"{task['id']}.json"), {}) or {}
+    util.write_json(os.path.join(root, RESULTS, feature, f"{task['id']}.json"), {**prev, "pass": not rework, "results": res})
+    if not rework:
+        return {"phase": "merge", "results": results, "smoked": task["id"], "log": [f"visual:accept:{task['id']}"]}
+    if (s.get("attempts") or {}).get(task["id"], 0) >= int(cfg["budget"]["attempts_per_screen"]):
+        return {"phase": "blocked", "results": results,
+                "blocked": {"reason": "budget exhausted", "job": task, "detail": _rework_text({"results": results}, task["id"])},
+                "smoked": task["id"], "log": [f"visual:budget:{task['id']}"]}
+    return {"phase": "rework", "results": results, "smoked": task["id"], "log": [f"visual:rework:{task['id']}:{','.join(rework)}"]}
+
+
+def _after_visual(s):
+    return {"merge": "merge", "blocked": "blocked"}.get(s.get("phase"), "prepare")
 
 
 # ─────────────────────────── merge (결정적) ───────────────────────────
@@ -675,7 +773,7 @@ def evidence(root, feature, task, s, commits):
     def m(r):
         st = (r or {}).get("status")
         return "✅" if st == "pass" else ("❌" if st == "fail" else "— 못 잼")
-    for layer in ("static", "build", "parity", "device", "contract_decode"):
+    for layer in ("static", "build", "parity", "device", "contract_decode", "visual"):
         L.append(f"| {layer} | {m((res.get('ios') or {}).get(layer))} | {m((res.get('android') or {}).get(layer))} |")
     for p in ("ios", "android"):
         b = (res.get(p) or {}).get("build") or {}
@@ -684,6 +782,12 @@ def evidence(root, feature, task, s, commits):
         shot = ((res.get(p) or {}).get("device") or {}).get("screenshot")
         if shot:
             L.append(f"- {p} 스크린샷: `{os.path.relpath(shot, root)}`")
+        vz = (res.get(p) or {}).get("visual") or {}
+        if vz.get("verdict"):
+            L.append(f"- {p} 시각 검수: {vz['verdict']} (점수 {vz.get('score')}) — {vz.get('detail')}")
+    img = next((((res.get(p) or {}).get("visual") or {}).get("image") for p in ("ios", "android") if ((res.get(p) or {}).get("visual") or {}).get("image")), None)
+    if img:
+        L.append(f"- 비교 이미지: `{os.path.relpath(img, root)}`")
     sid_rx = re.compile(rf"(^|\.){re.escape(task['id'])}(\.|$)")           # n.sound.* 뿐 아니라 data.sound.readonly · nav.sound.* 도 이 화면의 결정이다
     decs = [d for d in decide.ledger(root)["decisions"] if (d.get("screen") == task["id"] or sid_rx.search(d.get("topic") or "")) and d["status"] != "flipped"]
     if decs:
@@ -785,17 +889,24 @@ def tour_section(root, feature, cfg):
     out_dir = os.path.join(root, REPORTS, feature, "tour")
     L = ["## 화면 순회 (한 번 실행으로 모든 화면)", "", "| 플랫폼 | 결과 | 내용 |", "|---|---|---|"]
     shots = {}
-    for p in cfg.get("platforms") or []:
+    plats = cfg.get("platforms") or []
+    for p in plats:
         r = tour.run(root, p, config.app_vars(cfg), out_dir)
         mark = {"pass": "✅", "fail": "❌"}.get(r["status"], "— 못 잼")
         L.append(f"| {p} | {mark} | {leaks.mask_all(r['detail'])} |")
         for k, v in r["screens"].items():
-            shots.setdefault(k, {})[p] = os.path.relpath(v, os.path.join(root, REPORTS, feature))
+            shots.setdefault(k, {})[p] = v
         if r.get("fail_shot"):
             L.append(f"| | | 실패한 자리: `{os.path.relpath(r['fail_shot'], root)}` |")
     if shots:
-        L += ["", "| 화면 | " + " | ".join(cfg.get("platforms") or []) + " |", "|---" * (1 + len(cfg.get("platforms") or [])) + "|"]
-        L += [f"| {k} | " + " | ".join(f"`{shots[k][p]}`" if p in shots[k] else "—" for p in cfg.get("platforms") or []) + " |" for k in sorted(shots)]
+        cmp_ = vis.compare_all(root, shots, out_dir) if (cfg.get("smoke") or {}).get("visual", "review") != "off" else {}
+        rel = lambda x: f"`{os.path.relpath(x, os.path.join(root, REPORTS, feature))}`"      # noqa: E731
+        L += ["", "| 화면 | " + " | ".join(plats) + " | 디자인 비교 (점수 0~1, 낮을수록 가깝다) |", "|---" * (2 + len(plats)) + "|"]
+        for k in sorted(shots):
+            c = cmp_.get(k) or {}
+            sc = " · ".join(f"{p} {c['scores'][p]['score']}" for p in plats if p in (c.get("scores") or {}))
+            L.append(f"| {k} | " + " | ".join(rel(shots[k][p]) if p in shots[k] else "—" for p in plats)
+                     + f" | {(sc + ' ' + rel(c['image'])) if c.get('image') else (c.get('reason') or '—')} |")
     return "\n".join(L) + "\n"
 
 
@@ -821,7 +932,7 @@ def n_retro(s):
 def build_cycle():
     g = StateGraph(CycleState)
     for name, fn in (("intake", n_intake), ("plan", n_plan), ("review", n_review), ("prepare", n_prepare), ("dispatch", n_dispatch), ("smoke", n_smoke),
-                     ("merge", n_merge), ("blocked", n_blocked), ("done", n_done), ("retro", n_retro)):
+                     ("visual", n_visual), ("merge", n_merge), ("blocked", n_blocked), ("done", n_done), ("retro", n_retro)):
         g.add_node(name, fn)
     g.add_edge(START, "intake")
     g.add_conditional_edges("intake", _after_intake, {"intake": "intake", "plan": "plan"})
@@ -829,7 +940,8 @@ def build_cycle():
     g.add_conditional_edges("review", _after_review, {"review": "review", "prepare": "prepare"})
     g.add_conditional_edges("prepare", _after_prepare, {"dispatch": "dispatch", "blocked": "blocked"})
     g.add_conditional_edges("dispatch", _after_dispatch, {"blocked": "blocked", "smoke": "smoke"})
-    g.add_conditional_edges("smoke", _after_smoke, {"merge": "merge", "blocked": "blocked", "prepare": "prepare", "smoke": "smoke"})
+    g.add_conditional_edges("smoke", _after_smoke, {"merge": "merge", "blocked": "blocked", "prepare": "prepare", "smoke": "smoke", "visual": "visual"})
+    g.add_conditional_edges("visual", _after_visual, {"merge": "merge", "blocked": "blocked", "prepare": "prepare"})
     g.add_conditional_edges("merge", _after_merge, {"prepare": "prepare", "blocked": "blocked", "done": "done"})
     g.add_edge("blocked", "prepare")
     g.add_edge("done", "retro")

@@ -4,7 +4,7 @@
 > lead(메인 세션)와 개발자 둘(ios-dev · android-dev)이 LangGraph 순서대로 화면 단위로 동시에 만든다.
 > 사용자는 코드를 읽지 않고 증거를 보고 진행한다. 스모크를 통과하면 머지까지 자동이다.
 
-상태: v0.0.1 · 한 사이클 골격 구현 · PoC 1~4 · 6 확인(5 대기). 구현 현황은 `CLAUDE.md`, 이 문서에 없는 것은 맨 끝 "나중에" 에 있다.
+상태: v0.0.1 · 한 사이클 골격 구현 · PoC 1~6 확인. 구현 현황은 `CLAUDE.md`, 이 문서에 없는 것은 맨 끝 "나중에" 에 있다.
 
 ## 용어
 
@@ -55,12 +55,13 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 
 | 훅 | 대상 | 동작 |
 |---|---|---|
-| 검문 (PreToolUse) | `mcp__*claude-design__*` | `hooks/design_guard.py` → `design.allowed()`: D1 run 밖 호출 · D2 다른 프로젝트 · D3 거부 목록(support.js · standalone HTML · 번들 · uploads · 바이너리) · D4 허용 목록 밖 · D5 크기 상한. 허용 목록은 고른 `.dc.html` 에서 시작해 `<helmet>` · `x-import` 참조를 따라 늘어난다. `list_projects` 같은 메타 도구는 통과. 쓰기 · 공유 · `render_preview` 는 `guard.py` H7 이 항상 거부 |
+| 검문 (PreToolUse) | `mcp__*claude-design__*` | `hooks/design_guard.py` → `design.allowed()`: D1 run 밖 호출 · D2 다른 프로젝트 · D3 거부 목록(support.js · standalone HTML · 번들 · uploads · 바이너리) · D4 허용 목록 밖 · D5 크기 상한. 허용 목록은 고른 `.dc.html` 에서 시작해 `<helmet>` · `x-import` 참조를 따라 늘어난다. `list_projects` 같은 메타 도구는 통과. `render_preview` 는 run 안에서 그 run 이 받은 화면 `.dc.html` 만(기준 이미지). 쓰기 · 공유는 `guard.py` H7 이 항상 거부 |
 | 캡처 (PostToolUse) | `read_file` · `list_files` | `hooks/design_capture.py` → `design.capture()`: 래퍼(`<untrusted-project-content path etag>`)를 벗기고 엔티티 디코딩해 `design/` 에 바이트 그대로 쓰고(`_ds/*/x` → `design/ds/x`, 화면 · JSX → `design/<기능>/`), 모델에는 경로 · 바이트 · sha 한 줄만(`updatedMCPToolOutput`). 디스크로 빠진 큰 결과도 집어 온다. `list_files` 는 경로별 etag · size 를 run 에 남긴다(support.js etag = 형식 지문, size = D5 판정) |
 
 **design run**
 - ID `R-0001` 순번. run 은 하나만 진행(`.twbuild/intake/<기능>/run.json`). 시작 `start(scope, project, screens, ds_project)` → 받기 → `finish(spec)` 가 트리 · 토큰 생성 · 원장 갱신 · `design/runs/R-000N.json`(파일별 etag · sha256 · bytes · 이전 run 대비 추가/변경/삭제 · 화면별 트리 해시 · support.js etag) · `design-run: R-000N (<기능>)` 커밋 + `design-run/R-000N` 태그.
-- 훅이 없는 자리(테스트 · 수동)는 `twbuild design start|capture|listing|trial|finish|abort|status` 로 같은 코드를 부른다.
+- **기준 이미지** — lead 가 finish 직전에 화면 파일을 `render_preview` 하고 그 `serve_url` 을 `finish(spec, preview_url)` 에 넘기면, 하네스(`vis.py`)가 헤드리스 Chrome(DevTools 프로토콜)으로 미리보기를 열어 화면마다 `design/<기능>/shots/<화면>.png` 를 찍어 같은 커밋에 남긴다. 디자인 런타임(support.js)은 받지 않으므로(D3) 호스팅된 미리보기를 쓰고, 문서 응답만 가로채 로직 인스턴스를 건다. 화면마다 보이는 상태는 디자인 안에서 찾는다 — 트리의 `on_click` 핸들러를 그 화면이 보일 때만 실제로 불러 보며(넓이 우선) 각 화면이 처음 보이는 상태를 고른다(보임 판정은 트리의 `when` · `style`, 화면 감지와 같은 기준). 기기 프레임은 둥근 모서리를 빼고 3배(402×874 → 1206×2622, iPhone 17 Pro 와 같다)로 찍는다. `_shots.json` 에 화면별 트리 해시 — 트리가 바뀌면 그 그림은 기준에서 빠진다. serve_url 은 토큰이 든 단기 링크라 어디에도 남기지 않는다. 실측(2026-10-17): 사운드스케이프 7화면 · 핸들러 호출 232번 · 33초, 탐색 경로가 앱 순회와 같았다.
+- 훅이 없는 자리(테스트 · 수동)는 `twbuild design start|capture|listing|trial|finish [--url]|shots --url|abort|status` 로 같은 코드를 부른다.
 - 원장 판정: 빌드에 쓴 트리 해시 = 현재 트리 해시 → 최신. 다르면 run 간 트리 diff(바뀐 노드 ID)를 재작업 과제로 낸다 — 개발자 코드를 덮지 않는다.
 - 원장은 결정적 단계만 쓴다. LLM 은 쓰지 않는다.
 
@@ -132,12 +133,13 @@ api/openapi.yaml · api/fragments/  계약 본문 · 기본 조각
 | plan | lead | 화면 플랜(쓰는 데이터 `data:` 포함) · 카탈로그 컴포넌트 매핑 · 필요한 계약 변경 + 재생성 |
 | review | 결정적 + lead | 킥오프 검토 — 플랜 ↔ 트리 린트(핸들러에 상호작용이 없다 · if 상태가 states 에 없다 · data 가 데이터 과제에도 기존 객체에도 없다 · 호스트가 슬롯 화면보다 앞이다). 다시 연 화면(원장 consumed)은 그 화면에 걸린 결정 목록도 짚는다 — brief 와 어긋나는 것을 뒤집으라고. 빈틈이 있으면 lead 과제: 부분 수정(병합 · 재검토) 또는 accept, 없으면 첫 배차 과제에 `review: clean` 으로 실린다 |
 | build | 결정적 + 개발자 둘 | 디자인 시스템 과제(카탈로그 `design/ds/components/*.html` 의 클래스 가운데 **이 기능의 트리가 쓰는 것**이 있고 원장 `ds.built` 가 없을 때 — `Core/DesignSystem/Catalog/<Name>`, 두 플랫폼 같은 이름 · 매개변수, trailing content 규약. 카탈로그는 클래스 기반: 기본 클래스 = 컴포넌트, `<기본>-x` = 부품, 같은 요소의 나머지 = 변형) → 데이터 과제(14장) → 화면마다 구조 초안 생성 → ios-dev ∥ android-dev. 실측: 사운드스케이프 화면은 class 를 안 써 ds 과제가 없다(카탈로그 캡처 R-0002 는 됨) |
-| smoke | 결정적 | 게이트 3층 (6장). 실패 → **fix 분류**: rework(개발자 몫 — 정적 · 빌드 · 크래시 · 패리티) · retry(흔들림 — 시간 초과, 재배차 없이 한 번 다시 잰다) · blocked(하네스 · lead 몫 — 생성물 안 컴파일 · 계약 예시 디코딩 실패 · T9; 재작업으론 못 고친다). 화면당 예산(기본 5회)을 넘으면 `blocked` |
+| smoke | 결정적 | 게이트 층 (6장). 실패 → **fix 분류**: rework(개발자 몫 — 정적 · 빌드 · 크래시 · 패리티) · retry(흔들림 — 시간 초과, 재배차 없이 한 번 다시 잰다) · blocked(하네스 · lead 몫 — 생성물 안 컴파일 · 계약 예시 디코딩 실패 · T9; 재작업으론 못 고친다). 화면당 예산(기본 5회)을 넘으면 `blocked`. 다 통과한 화면 과제에 기준 이미지가 있으면 시각 층을 찍고 visual 로 |
+| visual | lead | 시각 검수(6장) — 비교 이미지(디자인 | iOS | Android)를 보고 플랫폼마다 accept · rework(무엇을 · 기대 · 실제). rework 는 메모 · 그림 경로가 그 플랫폼 재작업 프롬프트로 가고 시도로 센다(예산 소진이면 blocked). 묻는 노드라 촬영은 smoke 가 한다 |
 | merge | 결정적 | 짝 둘 다 통과 + 빌드 트리 해시 = 현재 해시 → 화면 단위 squash · 태그 · 원장 갱신 · 측정 요약(13장) · 보고서 |
 | retro | 결정적 | 사이클 끝 — 이 사이클 과제만의 요약 숫자를 이력(`cycles/<기능>.history.json`)에 보태고 이전 사이클과 비교한 회고(`.twbuild/reports/<기능>/_retro.md`: 첫 시도 통과율 · 스모크/배차 · 빌드 · 노드당 토큰 · 재작업 규칙 · 멈춤 사유(하네스 vs 개발자) · 제안)를 쓴다. LLM 없음. `twbuild stats --retro <기능>` |
 
 - 멈춤은 둘: `task`(LLM 과제 → `submit`) · `blocked`(사람 할 일 · 예산 소진).
-- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · dispatch · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke · merge(화면이면 화면 순회 생성물 `generated(tour)` 커밋) · done(화면 순회 실행 · `_cycle.md`).
+- 구현(`server/twbuild/cycle.py`): 묻는 노드 intake · plan · review · dispatch · visual · blocked(interrupt 만) / 실행 노드 prepare(워크트리 2개 — 이미 있으면 main 을 합친다(머지 커밋; 충돌은 `blocked`) · 계약 생성물 drift 면 다시 써 커밋 · `local.properties` · 구조 초안 `draft(<화면>)` 커밋 · `.twbuild/tasks/_current.json`) · smoke(+ 시각 층 촬영) · merge(화면이면 화면 순회 생성물 `generated(tour)` 커밋) · done(화면 순회 실행 + 디자인 비교 · `_cycle.md`).
   과제 순서는 plan 이 정한다(데이터 과제 → 화면들, 호스트 shell 은 슬롯 화면 뒤). 화면 과제는 한 쌍씩 차례로. 개발자가 `blocked` 를 내면 blocked 멈춤 → 사람이 풀고 `submit({})` → 같은 과제 재배차.
   merge 는 플랫폼별 squash · 태그 뒤에 원장(`design/index.json`) · 결정(`.claude/rules/team/`) · `features/<기능>/` · 측정 요약 · 잠금을 `ledger(<기능>/<과제>)` 커밋으로 main 에 남긴다. plan 이 계약을 바꾸면 생성물까지 `contract(<기능>)` 커밋. `_data.yaml` 의 엔티티는 사이클마다 합집합.
   실측(2026-10-13 헤드리스 lead, sound 화면): 리드가 intake · plan · 배차 · 결정(D-33 확정 · D-35→D-39 뒤집기)을 혼자 처리했고 19턴 · 8.6분 · $8.56(개발자 제외). 멈춤 원인은 하네스 버그(워크트리 디코딩 설정 · 생성물 누락 · 훅 거짓 양성 · 재작업 프롬프트 누락)였고 전부 고쳤다.
@@ -168,7 +170,8 @@ translations: [D-14]                       # 트리가 못 정한 번역 해석
 |---|---|---|
 | 빌드 · 실행 | 두 앱이 빌드되고 크래시 없이 뜨는가 — 기기 층(`device.py`): 부팅된 iPhone 시뮬레이터(없으면 가장 새 런타임을 부팅) · adb 기기에 설치 → 실행 → 5초 뒤 살아 있음 → 종료. 모든 명령에 시간 제한. 도구 · 기기 · 산출물이 없거나 시간이 넘으면 "못 잼"(머지를 막지 않고 보고서에 남는다 · fail 은 막는다) | 씀 (config `smoke.device`: merge = 다른 층을 다 통과한 시도에만 · every · off) |
 | 트리 정합성 (정적) | 트리의 노드 ID · `if` · `list` · `on_*` 가 양쪽 코드에 있음 · UiState 필드 · Action · Route · 데이터 객체 이름 · 메서드가 iOS = Android · Route 파라미터는 단순 값(ID) · 토큰과 값이 맞는 곳은 토큰 · 트리에 없는 직접값 없음 · 클래스 노드는 카탈로그 컴포넌트 · 리소스 양쪽 등록 | 안 씀 |
-| 화면 순회 | 한 번 실행으로 머지된 모든 화면에 실제로 들어가 찍히는가 — `tour.py`: 트리 `on_click` · 플랜 interactions 에서 화면 이동 그래프를 뽑아(핸들러 이름에 화면 이름 · `Route.<화면>` · 셸 탭 · `skip*` = 첫 실행 관문) 깊이 우선으로 걷는다 — 들어가 찍고, 닫는 노드(close · hide · dismiss, 시트 뒤 배경막은 뒤로)나 셸의 부모 탭으로 돌아온다, 닫는 노드가 없으면 iOS 는 다시 띄워 되밟고 Android 는 시스템 뒤로. 생성물 `TwScreenTour`(XCUITest · Compose UI 테스트)는 머지마다 다시 쓰고(`generated(tour)` 커밋), 사이클 끝(done)에 두 플랫폼에서 새로 설치해 한 번 돈다 → `.twbuild/reports/<기능>/tour/<화면>-<플랫폼>.png` · `_cycle.md` 표. 실패는 그 자리 화면(`fail-*`)과 함께 보고만 한다(이미 머지됨) | 씀 (config `smoke.tour`: done · off) |
+| 화면 순회 | 한 번 실행으로 머지된 모든 화면에 실제로 들어가 찍히는가 — `tour.py`: 트리 `on_click` · 플랜 interactions 에서 화면 이동 그래프를 뽑아(핸들러 이름에 화면 이름 · `Route.<화면>` · 셸 탭 · `skip*` = 첫 실행 관문) 깊이 우선으로 걷는다 — 들어가 찍고, 닫는 노드(close · hide · dismiss, 시트 뒤 배경막은 뒤로)나 셸의 부모 탭으로 돌아온다, 닫는 노드가 없으면 iOS 는 다시 띄워 되밟고 Android 는 시스템 뒤로. 생성물 `TwScreenTour`(XCUITest · Compose UI 테스트)는 머지마다 다시 쓰고(`generated(tour)` 커밋), 사이클 끝(done)에 두 플랫폼에서 새로 설치해 한 번 돈다 → `.twbuild/reports/<기능>/tour/<화면>-<플랫폼>.png` · `_cycle.md` 표. 실패는 그 자리 화면(`fail-*`)과 함께 보고만 한다(이미 머지됨). 기준 이미지가 있는 화면은 비교 이미지 · 점수도 표에 | 씀 (config `smoke.tour`: done · off) |
+| 시각 | 보이는 모양이 디자인과 같은가 — 구조 게이트가 못 보는 것(반투명 · 배경막 색 · 겹침 · 컨트롤 모양 · 간격). 다른 층을 다 통과한 화면 과제만: 워크트리 앱을 새로 설치해 그 화면까지만 곧장 가서 찍고(`tour.run_focus` — `TwFocusTour` 를 잠깐 두었다 지운다, 셸은 첫 슬롯 화면) 기준 이미지와 나란히 놓은 비교 이미지 + 칸별 차이 점수(`vis.compare`: 34pt 칸마다 평균 색 · 윤곽 밀도 차이, 상태 바 · 홈 표시줄 제외, 0~1)를 만든다 → lead 가 본다(visual 노드). 점수는 우선순위 신호다 — 데이터 · 시계 · 글꼴 · 상태 바가 달라 0 이 될 수 없다. 기준 이미지 · Chrome 이 없거나 그 화면까지 못 가면 못 잼(막지 않는다) | 씀 (config `smoke.visual`: review · off) |
 | 계약 | openapi 응답 예시 전부(example · examples · 스키마 example · $ref 응답)를 생성 모델로 디코딩 — `gen.decode_check()`: iOS 는 swiftc 임시 실행 파일, Android 는 생성 JUnit 테스트 `ContractDecodeTest`(init 스크립트로 JUnit). 빌드 층 통과 뒤 매 스모크 · 셋업 selfcheck 에서도 | 안 씀 |
 
 - 못 잰 층은 "못 잼" 으로 보이고 통과로 세지 않는다.
@@ -296,7 +299,7 @@ min_os: {ios: 17, android: 26}    # @Observable = iOS 17+. 첫 머지 뒤 잠김
 app: {name: "", product: "", id: ""}   # interview 가 채운다. product = ASCII PascalCase, id = com.example.<slug> (첫 머지 뒤 잠김)
 auth: {providers: [email, apple, google]}
 setup: {build: true}             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드
-smoke: {device: merge, tour: done}   # device: every | merge | off · tour: done(사이클 끝 화면 순회) | off
+smoke: {device: merge, tour: done, visual: review}   # device: every | merge | off · tour: done(사이클 끝 화면 순회) | off · visual: review(머지 전 lead 시각 검수) | off
 budget: {attempts_per_screen: 5}
 design:
   fetch: {include: [], exclude: [], max_bytes: 262144}
@@ -316,7 +319,7 @@ agents:
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
 | `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 — 절차 · CSS→네이티브 번역표(두 플랫폼 같은 행 순서) · 빌드 환경 · 규칙 ID(T · H · D) |
 | `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만. `skills:` 로 코어 스킬 프리로드, `tools:` 에 claude-design · Agent 없음. 플러그인 에이전트 타입 `twbuild:ios-dev` |
-| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T11 · 빌드) · device(기기 층) · skills(공개 스킬 설치) · fonts(웹폰트) · icons(트리 svg → TwIcon · TwIcons) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T11 · 빌드) · device(기기 층) · tour(화면 순회) · vis(시각 층: 기준 이미지 · 비교) · skills(공개 스킬 설치) · fonts(웹폰트) · icons(트리 svg → TwIcon · TwIcons) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
 | `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · `decisions.py`(SubagentStart 에 기능의 결정 전부 · PreToolUse 에 새 결정만, `agent_id` 기준 중복 제거) · `agent_metrics.py`(SubagentStart→Stop 시간 · 트랜스크립트 usage 합산). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
 | `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block`(블록이 템플릿과 다르면 wire · prepare 가 갱신) · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
 | `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py`, 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |
@@ -348,4 +351,5 @@ agents:
 붙인 것(2026-10-14~16): review · fix 분류 · retro(4장) · 스크린샷(기기 층이 살아 있을 때 `.twbuild/reports/<기능>/<화면>-<플랫폼>.png`, 증거 보고서에 링크) · 크기 예산(build 층이 산출물 바이트를 재고 `budget.app_bytes.<플랫폼>` 을 넘으면 fail) · 에이전트 교체 탈출구(`agents.<플랫폼>.fallback` · `fallback_after`, 기본 3회째부터) · 메인 세션 격리(H8, `lead.edit_apps`) · 승격 루프(`twbuild decide promote D-xx [ios|android]` → `.claude/rules/<플랫폼>/promoted.md`).
 아이콘 연결(2026-10-16): 트리 svg → `TwIcon`(Swift) · `TwIcons`(Kotlin) 생성물 · 초안 호출 · T11.
 화면 순회(2026-10-17): 골격이 UI 테스트 환경을 깐다(iOS `<product>UITests` 타깃 + `UITests/TwTour.swift`, Android androidTest 의존성 · 러너 + `TwTour.kt`; 골격 이전 앱은 `twbuild tour write` 가 채운다) · 걷기 테스트 생성 · 사이클 끝 실행(6장). CLI `twbuild tour [plan|write|ios|android]`. 실측: 사운드스케이프 7화면 iOS 37초 · Android 48초, 처음 돌린 날 두 플랫폼의 "카드 → 재생 화면" 미연결(남은 TODO)을 찾았다.
+시각 층(2026-10-17): 디자인 기준 이미지(design run 의 미리보기 · `vis.py`) · 머지 전 lead 시각 검수(visual 노드, 6장) · 사이클 끝 순회 표에 디자인 비교. 계기: Android 결함 4건(설정 시트 반투명 · 믹서 배경막 회색 · 하위 탭 겹침 · Material 슬라이더)이 게이트와 순회를 통과했다. 실측 점수: Android 믹서 0.39 · 설정 0.23 · 사운드 0.05, iOS 0.02~0.09 — 비교 이미지에서 iOS 설정 토글 손잡이가 잘린 것도 새로 보였다. 한 화면 두 플랫폼 촬영 91초.
 남은 것: 툴 장기 메모리 · 생성기 스타일 규칙 승격(번역표로 올리기) · 기기 접근성 트리 덤프 비교 · 백엔드 API 스모크 · 계약 옵션(실시간 · 업로드) · 문구 키 · 백엔드 개발자 · 에이전트 팀(팀원 간 메시지).

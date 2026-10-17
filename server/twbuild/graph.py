@@ -201,7 +201,15 @@ def _node_metrics(root, which, name, step, result, feature=None):
                 metrics.record(root, "smoke", key=f"smoke:{tid}:{plat}:{step}", task=tid, platform=plat, step=step, feature=feature,
                                static=(r.get("static") or {}).get("status"), build=(r.get("build") or {}).get("status"), build_ms=(r.get("build") or {}).get("ms"),
                                device=(r.get("device") or {}).get("status"), device_ms=(r.get("device") or {}).get("ms"), decode=(r.get("contract_decode") or {}).get("status"),
-                               violations=[v["rule"] for v in (r.get("static") or {}).get("violations") or []], passed=result.get("phase") == "merge")
+                               violations=[v["rule"] for v in (r.get("static") or {}).get("violations") or []], passed=result.get("phase") in ("merge", "visual"),
+                               visual_score=(r.get("visual") or {}).get("score"))
+    elif name == "visual":                                                       # 시각 검수 — lead 의 판정 (rework 는 재작업 시도로 이어진다)
+        tid = result.get("smoked")
+        for plat, r in (((result.get("results") or {}).get(tid) or {}) if tid else {}).items():
+            v = (r.get("visual") or {}) if isinstance(r, dict) else {}
+            if v.get("verdict"):
+                metrics.record(root, "visual", key=f"visual:{tid}:{plat}:{step}", task=tid, platform=plat, step=step, feature=feature,
+                               verdict=v["verdict"], score=v.get("score"))
     elif name == "merge" and result.get("phase") in ("build", "done"):
         metrics.record(root, "merged", key=f"merged:{step}", step=step, cursor=result.get("cursor"), feature=feature)
     if result.get("phase") == "blocked" and isinstance(result.get("blocked"), dict):      # 멈춤 — 사유별로 센다 (retro: 하네스 원인 vs 개발자 원인)
