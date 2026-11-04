@@ -867,7 +867,7 @@ def decode_check(root, platform, log_path, timeout=900, cfg=None):
     util.write_text(init, _INIT_GRADLE)
     sdk_props = os.path.join(app, "local.properties")
     if not os.path.isfile(sdk_props):
-        util.write_text(sdk_props, f"sdk.dir={t['android_sdk']}\n")
+        util.write_text(sdk_props, util.sdk_props(t['android_sdk']))
     fqcn = f"{pkg}.core.networking.generated.ContractDecodeTest"
     with open(log_path, "w", encoding="utf-8") as lf:
         code = _run([gradlew, "-I", init, "testDebugUnitTest", "--tests", fqcn, "-q"], app, lf, timeout,

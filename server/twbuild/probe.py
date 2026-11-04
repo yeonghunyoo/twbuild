@@ -32,7 +32,10 @@ def android_sdk():
         if v and os.path.isdir(v):
             return v
     home = os.path.expanduser("~")
-    for p in (os.path.join(home, "Library", "Android", "sdk"), os.path.join(home, "Android", "Sdk")):
+    cands = [os.path.join(home, "Library", "Android", "sdk"), os.path.join(home, "Android", "Sdk")]
+    if os.environ.get("LOCALAPPDATA"):                    # Windows — Android Studio 기본 위치
+        cands.append(os.path.join(os.environ["LOCALAPPDATA"], "Android", "Sdk"))
+    for p in cands:
         if os.path.isdir(p):
             return p
     return None

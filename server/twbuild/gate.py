@@ -351,7 +351,7 @@ def ensure_android_props(base, t=None):
     app = os.path.join(base, util.APPS["android"])
     p = os.path.join(app, "local.properties")
     if t.get("android_sdk") and os.path.isdir(app) and not os.path.isfile(p):
-        util.write_text(p, f"sdk.dir={t['android_sdk']}\n")
+        util.write_text(p, util.sdk_props(t['android_sdk']))
 
 
 def build(base, platform, vars_, log_path, timeout=1800):

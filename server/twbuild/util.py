@@ -70,6 +70,11 @@ def exe(path):
     return path
 
 
+def sdk_props(sdk):
+    """local.properties 한 줄 — Windows 경로의 역슬래시는 properties 이스케이프라 / 로 쓴다 (Gradle 은 둘 다 받는다)."""
+    return f"sdk.dir={str(sdk).replace(chr(92), '/')}\n"
+
+
 def data_dir():
     """플러그인 데이터 디렉터리 — venv · 공개 스킬 캐시. 플러그인 업데이트에도 남는다.
     Bash 도구에는 CLAUDE_PLUGIN_DATA 가 없어서 고정 경로를 쓴다 (TWBUILD_DATA 로 바꿀 수 있다)."""

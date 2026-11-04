@@ -257,7 +257,7 @@ def scaffold(root, answers=None):
     util.write_text(os.path.join(root, "SETUP.md"), _setup_md(rows, cfg))
     sdk = probe.android_sdk()
     if "android" in (cfg.get("platforms") or []) and sdk:
-        util.write_text(os.path.join(util.app_dir(root, "android"), "local.properties"), f"sdk.dir={sdk}\n")
+        util.write_text(os.path.join(util.app_dir(root, "android"), "local.properties"), util.sdk_props(sdk))
     util.write_json(util.tw(root, SCAFFOLD_LOG), log)
     return out
 
