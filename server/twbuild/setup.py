@@ -395,7 +395,7 @@ def _build(root, p, cfg, t):
     else:
         if not t["android_sdk"] or not t["java"]:
             return {"status": "unmeasured", "detail": "Android SDK · JDK 없음"}
-        gradlew = os.path.join(app, "gradlew")
+        gradlew = util.gradlew(app)
         steps = []
         if not os.path.isfile(gradlew):
             if not t["gradle"]:

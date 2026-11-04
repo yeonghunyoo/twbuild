@@ -191,7 +191,7 @@ def _adb_env(tools):
 
 def _avds(s, tools):
     sdk = tools.get("android_sdk")
-    emu = os.path.join(sdk, "emulator", "emulator") if sdk else None
+    emu = util.exe(os.path.join(sdk, "emulator", "emulator")) if sdk else None
     emu = emu if emu and os.path.isfile(emu) else shutil.which("emulator")
     if not emu:
         return []

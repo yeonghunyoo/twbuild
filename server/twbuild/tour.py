@@ -476,7 +476,7 @@ def run_android(base, vars_, out_dir, tools=None, timeout=1500, cls="TwScreenTou
     tools = tools or probe.toolchain()
     adb = tools.get("adb")
     app = os.path.join(base, "apps", "android")
-    gradlew = os.path.join(app, "gradlew")
+    gradlew = util.gradlew(app)
     if not adb or not os.path.isfile(gradlew):
         return {"status": "unmeasured", "detail": "adb · gradlew 없음", "screens": {}, "failures": [], "log": ""}
     rc, out = _sh([adb, "devices"], timeout=20)

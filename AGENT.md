@@ -290,6 +290,30 @@ View ──Action──▶ ViewModel ──▶ 데이터 계층 { Repository · 
 - 쓰지 않는다: UseCase 층(Clean Architecture) · TCA · 완전한 MVI reducer · Hilt · Swinject.
 - config `architecture` 로 고른다(기본 `mvvm-udf`, 다른 값은 "나중에"). 생성기 템플릿은 `templates/draft/<플랫폼>/<패턴>/`. 첫 화면이 머지되면 잠긴다.
 
+## 15. 빌드 머신 — 원격 러너
+
+조종 기기(클라우드 세션 · 노트북 · 폰 — 플러그인이 도는 곳)와 빌드 머신(Mac = iOS · Windows/Linux = Android)을 나눈다. 조종 기기에 그 플랫폼 툴체인이 없으면 빌드 · 계약 디코딩 · 기기 층을 그 플랫폼 머신의 **GitHub Actions 자체 호스팅 러너**에서 돌리고 결과를 git 으로 돌려받는다. 원격 MCP 서버는 두지 않는다 — 빌드는 툴체인이 있는 머신에서만 되고, 상태 · 판정은 조종 기기의 하네스가 그대로 갖는다.
+
+```
+조종 기기(twbuild)                       GitHub (private 레포)                 빌드 머신
+ 워크트리 스냅샷 → commit-tree ── push ─▶ twbuild/run/<플랫폼>/<id> ─ push 트리거 ─▶ 자체 호스팅 러너: twbuild run-job
+ ls-remote 대기 · fetch ◀──────────────── twbuild/result/<플랫폼>/<id> ◀── push(GITHUB_TOKEN) ── result.json · 로그 · 스크린샷
+ 결과를 로컬 경로에 풀고 두 브랜치를 지운다
+```
+
+- **방식 선택**: config `build.runner` — `auto`(기본: 툴체인이 있으면 local, 없고 러너 워크플로가 깔려 있으면 remote, 그 밖은 local = 지금처럼 못 잼) · `local` · `remote`, 플랫폼별로 `{ios: remote, android: local}` 도 된다. 판정 함수는 `runner.mode()` 하나 — 스모크 · `twbuild check --build` · doctor 가 같이 쓴다.
+- **자격**: remote 는 origin 이 GitHub 이고 **private** 일 때만 쓴다. 판정은 토큰 없이: `api.github.com/repos/<o>/<r>` 가 200 + `private: false` 면 public(거부), 404 인데 `git ls-remote origin` 이 되면 private, 그 밖은 "못 잼"(막지 않는다). public 거부를 푸는 설정은 없다 — 포크 PR 이 워크플로를 고쳐 러너 머신에서 코드를 돌릴 수 있다(GitHub 권고 · 무료 플랜엔 워크플로 고정이 없다). 결과는 `.twbuild/runner.json` 에 하루 캐시.
+- **요청**: 워크트리 작업 트리 전체(커밋 안 된 변경 포함, gitignore 제외)를 임시 인덱스로 tree 를 만들고, 부모 = 워크트리 HEAD · 메시지 = 요청 JSON(`jobs` · `platform` · `vars` · 계약 디코딩 설정 · 결과 ref · 플러그인 버전)인 커밋을 `commit-tree` 로 만들어 push 한다. 워크트리 브랜치 · HEAD 는 그대로다. 잡은 열거형만(`ping` · `build` · `decode` · `device`) — 요청이 명령을 싣지 않는다.
+- **러너**: 대상 레포 `.github/workflows/twbuild-runner.yml`(`twbuild runner install` 이 쓰고 main 에 커밋 — push 트리거 워크플로는 push 된 커밋 안의 파일을 쓰므로 main 에 있어야 과제 브랜치가 물려받는다). 플랫폼별 잡이 라벨 `[self-hosted, twbuild-ios]` · `[self-hosted, twbuild-android]` 에서 돌고, 플러그인은 공개 레포를 `build.remote.plugin_ref` 로 체크아웃해 `run.py run-job` 을 부른다(표준 라이브러리만 — venv 없음). 체크아웃은 `clean: false` + 잡 안에서 `git clean -ffd`(ignored 는 남긴다) — DerivedData · Gradle 산출물이 남아 증분 빌드. `concurrency` 는 플랫폼마다 하나.
+- **결과**: 러너가 `result.json`(층별 `{status, detail, ms, bytes}` · 로그 · 스크린샷 상대 경로 · 러너 툴체인 · 플러그인 버전)과 파일을 부모 없는 커밋으로 `twbuild/result/<플랫폼>/<id>` 에 push 한다. 조종 기기는 `ls-remote` 로 기다렸다가(기본 2400초, `build.remote.timeout`) fetch → 로컬 로그 · 스크린샷 경로에 풀고 두 브랜치를 지운다. 층 결과 모양은 로컬과 같다 — 게이트 · fix 분류 · 보고서는 원격인지 모른다(`runner: <러너 이름>` 만 붙는다).
+- **멈춤**: 러너가 시간 안에 답하지 않거나 push · fetch 가 실패하면 build 층 `fail` + `runner_error` → fix 분류 `blocked(harness)`("러너 응답 없음 — `twbuild runner ping`"). 못 잼으로 두면 빌드 없이 머지된다.
+- **층 순서**: smoke 는 플랫폼마다 build + decode 를 한 잡으로, 기기 층은 정책대로(merge = 다른 층이 다 통과한 시도에만) 두 번째 잡(build + device, 증분)으로 보낸다 — 로컬과 같은 판정 순서.
+- **아직 로컬만**: 시각 층(`run_focus`) · 사이클 끝 화면 순회는 원격 플랫폼이면 "못 잼 — 원격 러너는 아직 build · decode · device 만". 셋업 selfcheck 빌드도 로컬만(못 잼).
+- **doctor**: 원격 플랫폼은 Xcode · SDK 행을 "원격 러너가 맡는다"로 보이고, `runner_<플랫폼>` 행(자격 · 마지막 ping 시각 · 왕복 초 · 러너 툴체인)을 더한다. ping 은 오래 걸려 doctor 가 하지 않는다 — `twbuild runner ping [ios|android]`.
+- **실측 전**: git 왕복 · 결과 해석은 테스트(bare origin + 가짜 러너)로만 확인했다. 실제 GitHub Actions 러너(Mac · Windows) · 클라우드 세션의 push 허용 범위는 아직 안 쟀다.
+- **Windows**: `gradlew.bat` · `adb.exe` · `emulator.exe` 를 찾는다. 에뮬레이터는 WHPX 로 Windows 에서 돈다(리눅스 컨테이너는 KVM 이 없어 기기 층을 못 잰다).
+- **안전**: 러너는 전용 저권한 OS 계정 · private 레포에만. 하네스의 push 는 `run/` · `result/` 브랜치만 쓰고 지운다(H1 은 에이전트 Bash 의 push 를 막는 훅이라 하네스 코드는 대상이 아니다). 결과에 실리는 로그는 러너가 마스킹한다.
+
 ## 설정 — `.twbuild/config.yaml`
 
 ```yaml
@@ -300,6 +324,9 @@ app: {name: "", product: "", id: ""}   # interview 가 채운다. product = ASCI
 auth: {providers: [email, apple, google]}
 setup: {build: true}             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드
 smoke: {device: merge, tour: done, visual: review}   # device: every | merge | off · tour: done(사이클 끝 화면 순회) | off · visual: review(머지 전 lead 시각 검수) | off
+build:                            # 15장 — 빌드 머신
+  runner: auto                    # auto(툴체인 있으면 local, 없고 러너 워크플로가 있으면 remote) | local | remote · 플랫폼별 {ios: remote, android: local}
+  remote: {prefix: twbuild, timeout: 2400, plugin_ref: main}   # 브랜치 <prefix>/run|result/<플랫폼>/<id> · 대기 초 · 러너가 체크아웃할 플러그인 ref
 budget: {attempts_per_screen: 5}
 design:
   fetch: {include: [], exclude: [], max_bytes: 262144}
@@ -319,10 +346,10 @@ agents:
 | `skills/twbuild/` · `skills/setup/` | lead 지침 · 셋업 과제 |
 | `skills/dev-loop/` · `skills/{ios,android}-translate/` · `skills/{ios,android}-playbook/` · `skills/harness-rules/` | 개발자 코어 스킬 — 절차 · CSS→네이티브 번역표(두 플랫폼 같은 행 순서) · 빌드 환경 · 규칙 ID(T · H · D) |
 | `agents/{ios,android}-dev.md` | 역할 · 경계 · 입출력만. `skills:` 로 코어 스킬 프리로드, `tools:` 에 claude-design · Agent 없음. 플러그인 에이전트 타입 `twbuild:ios-dev` |
-| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T11 · 빌드) · device(기기 층) · tour(화면 순회) · vis(시각 층: 기준 이미지 · 비교) · skills(공개 스킬 설치) · fonts(웹폰트) · icons(트리 svg → TwIcon · TwIcons) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
+| `server/` | `run.py`(런처 · venv 부트스트랩 `~/.claude/plugins/data/twbuild/venv` · CLI: serve · doctor · status · advance · submit · init · stats · test · decide · design · tokens · scan · device · skills · gen · mock · runner(status · install · ping) · run-job(러너 머신, 표준 라이브러리만)) · `twbuild/`: util · yaml_lite · config(+ 잠금) · leaks(+ 파일 검사) · git · probe(doctor) · contract · gen(계약 → Swift · Kotlin 모델 · 클라이언트 · 디코딩 검사) · mock · setup · metrics(+ 기능 요약 · compare) · graph(LangGraph 셋업 그래프 · 구동) · cycle(사이클 그래프) · draft(구조 초안 생성기) · gate(T1~T11 · 빌드) · device(기기 층) · tour(화면 순회) · vis(시각 층: 기준 이미지 · 비교) · skills(공개 스킬 설치) · fonts(웹폰트) · icons(트리 svg → TwIcon · TwIcons) · decide(결정 원장 `.claude/rules/team/_decisions.json` → rules md 생성) · runner(15장: 방식 판정 · 자격 · git 왕복 · run-job) · router · server(MCP: status · advance · submit · doctor · design_*) · tokens · tree · design. 루트는 `CLAUDE_PROJECT_DIR` |
 | `hooks/` | `guard.py`(H1~H7 차단) · `design_guard.py`(D1~D5 검문) · `design_capture.py`(캡처 · 목록 etag) · `decisions.py`(SubagentStart 에 기능의 결정 전부 · PreToolUse 에 새 결정만, `agent_id` 기준 중복 제거) · `agent_metrics.py`(SubagentStart→Stop 시간 · 트랜스크립트 usage 합산). 전부 표준 라이브러리, 판정 코드는 서버 모듈과 공유 |
-| `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block`(블록이 템플릿과 다르면 wire · prepare 가 갱신) · 구조 초안(`draft/<플랫폼>/<패턴>/`) |
-| `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py`, 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |
+| `templates/` | 모노레포 골격 · 계약 조각 · 최소 토큰 · placeholders · `pre-commit.sh` · `gitignore.block`(블록이 템플릿과 다르면 wire · prepare 가 갱신) · 구조 초안(`draft/<플랫폼>/<패턴>/`) · 러너 워크플로(`github/twbuild-runner.yml`, 15장) |
+| `tests/` | `run.sh` → `cases.py`(+ 형제 `cases_device.py` · `cases_skills.py` · `cases_gen.py` · `cases_runner.py`(bare origin + 가짜 러너 스레드로 git 왕복), 같은 CASES 에 등록) — 임시 레포 · 픽스처 `fixtures/mini.dc.html` — 셋업 그래프 끝까지 · 계약 · 훅 · 토큰 · 트리 · design run · 사이클 끝까지 · 시크릿 검사 · 기기(가짜 도구) · 스킬(가짜 tarball) · 생성기 |
 
 ## 금지
 

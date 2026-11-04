@@ -129,7 +129,7 @@ def _design(a, root):
 def main():
     ap = argparse.ArgumentParser(description="twbuild MCP 서버 · CLI")
     ap.add_argument("cmd", nargs="?", default="serve",
-                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock", "check", "fonts", "tour", "icons"])
+                    choices=["serve", "doctor", "status", "advance", "submit", "init", "stats", "test", "decide", "version", "design", "tokens", "scan", "device", "skills", "gen", "mock", "check", "fonts", "tour", "icons", "runner", "run-job"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--root", default=None)
     ap.add_argument("--scope", default=None, help="design start: 기능 이름")
@@ -150,6 +150,10 @@ def main():
     ap.add_argument("--compare", action="store_true", help="stats: 기능별 비교 표")
     ap.add_argument("--feature", default=None, help="stats: 기능 하나의 요약")
     ap.add_argument("--retro", default=None, help="stats: 기능의 회고 보고서")
+    ap.add_argument("--dir", default=None, help="run-job: 체크아웃된 요청 커밋 디렉터리")
+    ap.add_argument("--out", default=None, help="run-job: 결과 디렉터리")
+    ap.add_argument("--clean", action="store_true", help="run-job: git clean -ffd (ignored 는 남긴다)")
+    ap.add_argument("--no-push", action="store_true", help="run-job: 결과를 push 하지 않는다(시험)")
     a = ap.parse_args()
     root = os.path.abspath(a.root or os.environ.get("TWBUILD_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -219,9 +223,17 @@ def main():
         from twbuild import mock
         mock.serve(root, a.port)
         return 0
-    if a.cmd in ("device", "skills", "fonts", "icons", "tour"):
-        from twbuild import device, fonts, icons, skills, tour
-        code, msg = {"device": device, "skills": skills, "fonts": fonts, "icons": icons, "tour": tour}[a.cmd].cli(list(a.args), root)
+    if a.cmd == "run-job":                    # 러너 머신 — 표준 라이브러리만(venv 없음, Windows 포함)
+        from twbuild import runner
+        if not a.dir or not a.out:
+            print("run-job --dir <체크아웃> --out <결과 디렉터리> [--clean] [--no-push]", file=sys.stderr)
+            return 2
+        code, msg = runner.run_job_cli(a.dir, a.out, push=not a.no_push, clean=a.clean)
+        print(msg)
+        return code
+    if a.cmd in ("device", "skills", "fonts", "icons", "tour", "runner"):
+        from twbuild import device, fonts, icons, runner, skills, tour
+        code, msg = {"device": device, "skills": skills, "fonts": fonts, "icons": icons, "tour": tour, "runner": runner}[a.cmd].cli(list(a.args), root)
         print(msg)
         return code
     bootstrap_venv()

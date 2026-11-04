@@ -377,7 +377,7 @@ def _build(base, platform, vars_, log_path, timeout):
     else:
         if not t["android_sdk"] or not t["java"]:
             return {"status": "unmeasured", "detail": "Android SDK · JDK 없음"}
-        gradlew = os.path.join(app, "gradlew")
+        gradlew = util.gradlew(app)
         if not os.path.isfile(gradlew):
             return {"status": "unmeasured", "detail": "gradlew 없음 — 셋업 selfcheck 가 만든다"}
         steps = [[gradlew, "assembleDebug", "-q"]]

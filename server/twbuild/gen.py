@@ -857,7 +857,7 @@ def decode_check(root, platform, log_path, timeout=900, cfg=None):
     if not t["android_sdk"] or not t["java"]:
         return {"status": "unmeasured", "detail": "Android SDK · JDK 없음", "log": ""}
     app = util.app_dir(root, "android")
-    gradlew = os.path.join(app, "gradlew")
+    gradlew = util.gradlew(app)
     if not os.path.isfile(gradlew):
         return {"status": "unmeasured", "detail": "gradlew 없음 — 셋업 selfcheck 가 만든다", "log": ""}
     pkg = config.app_vars(cfg)["id"]

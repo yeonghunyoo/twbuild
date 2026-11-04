@@ -65,7 +65,7 @@ def toolchain():
         code, out = _run(["gradle", "--version"], timeout=60)
         m = re.search(r"Gradle (\S+)", out)
         t["gradle"] = m.group(1) if m else "?"
-    adb = os.path.join(t["android_sdk"], "platform-tools", "adb") if t["android_sdk"] else None
+    adb = util.exe(os.path.join(t["android_sdk"], "platform-tools", "adb")) if t["android_sdk"] else None
     t["adb"] = adb if adb and os.path.isfile(adb) else (shutil.which("adb") or None)
     return t
 
@@ -97,7 +97,25 @@ def checks(root, cfg=None, t=None):
     name, email = git.identity(root) if git.is_repo(root) else ("", "")
     out.append(_check("git_identity", "git user.name · user.email", bool(name and email), "",
                       'git config user.name "<이름>" && git config user.email "<id>+<login>@users.noreply.github.com"', "커밋 · 머지", 3))
-    if "ios" in plats:
+    from . import runner                              # 늦은 import — 15장 빌드 머신
+    remote = {p for p in plats if runner.mode(root, cfg, p, t) == "remote"}
+    for p in sorted(remote):
+        ok, why = runner.eligible(root)
+        lp = runner.last_ping(root, p)
+        if ok is False:
+            st, det, fix = False, why, "레포를 private 으로 바꾸거나 build.runner 를 local 로 둔다"
+        elif not runner.installed(root):
+            st, det, fix = False, f"{runner.WORKFLOW} 없음", "twbuild runner install 뒤 main 을 push 한다"
+        elif not lp:
+            st, det, fix = None, f"{why} · ping 기록 없음", f"twbuild runner ping {p}"
+        else:
+            st = bool(lp.get("ok"))
+            det = f"{why} · {lp.get('host') or '?'} 왕복 {lp.get('seconds')}s ({lp.get('t')})" if st else f"{why} · 마지막 ping 실패: {lp.get('detail')}"
+            fix = "" if st else f"러너 머신의 Actions 러너(라벨 {runner.LABELS[p]})를 켜고 twbuild runner ping {p}"
+        out.append(_check(f"runner_{p}", f"{p} 빌드 머신(원격 러너)", st, det, fix, f"{p} 빌드 · 계약 · 기기 층", 2))
+    if "ios" in plats and "ios" in remote:
+        out.append(_check("xcode", "Xcode (xcodebuild)", None, "원격 러너가 맡는다 (15장)", "", "", 0))
+    elif "ios" in plats:
         darwin = t["os"] == "Darwin"
         out.append(_check("xcode", "Xcode (xcodebuild)", bool(t["xcodebuild"]) if darwin else None,
                           t["xcodebuild"] or ("macOS 가 아니다" if not darwin else "없음"),
@@ -107,12 +125,14 @@ def checks(root, cfg=None, t=None):
         out.append(_check("simulator", "iOS 시뮬레이터", (t["simulators"] or 0) > 0 if darwin and t["xcodebuild"] else None,
                           f"{t['simulators']}대" if t["simulators"] is not None else "못 잼",
                           "Xcode → Settings → Platforms 에서 iOS 런타임 설치", "iOS 실행 스모크", 1))
-    if "android" in plats:
+    if "android" in plats and "android" in remote:
+        out.append(_check("android_sdk", "Android SDK", None, "원격 러너가 맡는다 (15장)", "", "", 0))
+    elif "android" in plats:
         out.append(_check("android_sdk", "Android SDK", bool(t["android_sdk"]), t["android_sdk"] or "없음",
                           "Android Studio 설치 후 SDK Manager, 또는 ANDROID_HOME 설정", "Android 빌드 · 스모크", 2))
         out.append(_check("jdk", f"JDK {JDK_MIN}+", bool(t["java"] and t["java"] >= JDK_MIN), f"java {t['java']}" if t["java"] else "없음",
                           "brew install --cask temurin@17 (또는 Android Studio 내장 JDK 를 PATH 에)", "Android 빌드", 2))
-        wrapper = os.path.isfile(os.path.join(util.app_dir(root, "android"), "gradlew"))
+        wrapper = os.path.isfile(util.gradlew(util.app_dir(root, "android")))
         out.append(_check("gradle", "Gradle (wrapper 또는 gradle)", wrapper or bool(t["gradle"]),
                           "wrapper 있음" if wrapper else (t["gradle"] or "없음"),
                           "brew install gradle (wrapper 생성용 — 한 번만)", "Android 빌드", 2))

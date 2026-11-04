@@ -22,6 +22,7 @@ DEFAULTS = {
     "auth": {"providers": ["email", "apple", "google"]},
     "smoke": {"device": "merge", "tour": "done", "visual": "review"},
     "budget": {"attempts_per_screen": 5},
+    "build": {"runner": "auto", "remote": {"prefix": "twbuild", "timeout": 2400, "plugin_ref": "main"}},   # 15장 빌드 머신
     "lead": {"edit_apps": False},            # H8 — 메인 세션이 apps/ 를 직접 쓰는 것을 허용할지
     "design": {"fetch": {"include": [], "exclude": [], "max_bytes": 262144}},
     "setup": {"build": True},                             # selfcheck 에서 툴체인이 있으면 빈 골격을 한 번 빌드한다
@@ -112,6 +113,8 @@ def problems(cfg):
         out.append(f"smoke.tour 는 {list(SMOKE_TOUR)} 중 하나다")
     if (cfg.get("smoke") or {}).get("visual", "review") not in SMOKE_VISUAL:
         out.append(f"smoke.visual 은 {list(SMOKE_VISUAL)} 중 하나다")
+    from . import runner                       # 늦은 import — runner 가 config 를 쓴다
+    out += runner.problems(cfg)
     b = (cfg.get("budget") or {}).get("attempts_per_screen")
     if not isinstance(b, int) or b < 1:
         out.append("budget.attempts_per_screen 은 1 이상의 정수다")

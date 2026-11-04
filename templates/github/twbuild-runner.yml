@@ -1,0 +1,40 @@
+# twbuild 빌드 머신 (AGENT.md 15장) — `twbuild runner install` 이 썼다. 손으로 고치면 다음 install 이 덮는다.
+# 조종 기기가 __PREFIX__/run/<플랫폼>/<id> 를 push 하면 그 플랫폼 러너가 빌드 · 계약 디코딩 · 기기 층을 돌리고
+# 결과를 __PREFIX__/result/<플랫폼>/<id> 로 push 한다. 자체 호스팅 러너는 private 레포에서만 쓴다.
+# concurrency 를 두지 않는다 — 대기 중인 요청이 취소되면 조종 기기가 시간 초과까지 기다린다. 러너 한 대는 잡을 하나씩 받는다.
+name: twbuild runner
+on:
+  push:
+    branches: ['__PREFIX__/run/**']
+permissions:
+  contents: write
+jobs:
+  ios:
+    if: contains(github.ref, '/run/ios/')
+    runs-on: [self-hosted, __LABEL_IOS__]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: app, clean: false, fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with: {repository: __PLUGIN_REPO__, ref: __PLUGIN_REF__, path: twbuild-plugin, clean: true}
+      - name: run-job
+        shell: bash
+        run: python3 twbuild-plugin/server/run.py run-job --dir app --out "$RUNNER_TEMP/twbuild-out" --clean
+  android:
+    if: contains(github.ref, '/run/android/')
+    runs-on: [self-hosted, __LABEL_ANDROID__]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: app, clean: false, fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with: {repository: __PLUGIN_REPO__, ref: __PLUGIN_REF__, path: twbuild-plugin, clean: true}
+      - name: run-job (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python twbuild-plugin/server/run.py run-job --dir app --out "$env:RUNNER_TEMP/twbuild-out" --clean
+      - name: run-job
+        if: runner.os != 'Windows'
+        shell: bash
+        run: python3 twbuild-plugin/server/run.py run-job --dir app --out "$RUNNER_TEMP/twbuild-out" --clean

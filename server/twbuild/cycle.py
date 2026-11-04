@@ -17,7 +17,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, setup, tokens, tour, tree, util, vis, yaml_lite
+from . import config, contract, decide, design, device, draft, fonts, gate, gen, git, icons, leaks, metrics, probe, runner, setup, tokens, tour, tree, util, vis, yaml_lite
 
 PLANS = os.path.join(".twbuild", "plans")
 RESULTS = os.path.join(".twbuild", "results")
@@ -537,11 +537,16 @@ def check_cli(cwd, platform=None, build=False):
         lines += [f"  - {v['rule']}: {v['detail']}" for v in st.get("violations") or []]
         fail = fail or st["status"] == "fail"
         if build and p in wts:
-            b = gate.build(wts[p], p, config.app_vars(cfg), util.tw(main, util.LOGS_DIR, f"check-{feature}-{task['id']}-{p}.log"))
-            lines.append(f"[{p}] 빌드 {b['status']} — {b.get('detail', '')} ({metrics._fmt_ms(b.get('ms'))})")
+            log = util.tw(main, util.LOGS_DIR, f"check-{feature}-{task['id']}-{p}.log")
+            if runner.mode(main, cfg, p) == "remote":            # 15장 — 이 머신에 툴체인이 없으면 그 플랫폼 러너가 빌드한다
+                b = runner.remote_layers(main, wts[p], p, config.app_vars(cfg), cfg, ["build"], {"build": log})["build"]
+            else:
+                b = gate.build(wts[p], p, config.app_vars(cfg), log)
+            lines.append(f"[{p}] 빌드 {b['status']} — {b.get('detail', '')} ({metrics._fmt_ms(b.get('ms'))})" + (f" · 원격 {b['runner']}" if b.get("runner") else ""))
             if b["status"] == "fail":
                 fail = True
-                lines.append(gate.tail(b["log"]))
+                if b.get("log"):
+                    lines.append(gate.tail(b["log"]))
     par = next(iter(res.values()), {}).get("parity") if res else None
     if par:
         lines.append(f"[both] 패리티(T5 · T6) {par['status']}")
@@ -560,32 +565,53 @@ def n_smoke(s):
     vars_ = config.app_vars(cfg)
     wts = {p: util.tw(root, util.WORKTREES, worktree_name(p, task["id"])) for p in cfg.get("platforms") or []}
     res = static_results(root, feature, task, wts, cfg)                 # 정적 층 + 패리티 (twbuild check 와 같은 함수)
+    policy = (cfg.get("smoke") or {}).get("device", "merge")
+    tc = probe.toolchain()
+    modes = {p: runner.mode(root, cfg, p, tc) for p in wts}            # 15장 — local | remote(그 플랫폼 러너가 빌드 · 디코딩 · 기기 층)
+    logs = {p: {"build": util.tw(root, util.LOGS_DIR, f"smoke-{feature}-{task['id']}-{p}.log"),
+                "decode": util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log"),
+                "device": util.tw(root, util.LOGS_DIR, f"device-{feature}-{task['id']}-{p}.log")} for p in wts}
+    shot = lambda p: os.path.join(root, REPORTS, feature, f"{task['id']}-{p}.png")      # noqa: E731 — 증거 스크린샷
     for p, wt in wts.items():
         r = res[p]
-        log = util.tw(root, util.LOGS_DIR, f"smoke-{feature}-{task['id']}-{p}.log")
-        b = gate.build(wt, p, vars_, log)
-        if b.get("status") == "fail":
-            b["tail"] = gate.tail(log)
+        if modes[p] == "remote":
+            jobs = ["build", "decode"] + (["device"] if policy == "every" else [])
+            rl = runner.remote_layers(root, wt, p, vars_, cfg, jobs, logs[p], screenshot=shot(p))
+            b = rl["build"]
+            r["contract_decode"] = rl.get("contract_decode") or {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"}
+            if "device" in rl:
+                r["device"] = rl["device"]
+        else:
+            b = gate.build(wt, p, vars_, logs[p]["build"])
+            if b.get("status") == "fail":
+                b["tail"] = gate.tail(logs[p]["build"])
+            if b.get("status") == "pass":
+                b["bytes"] = device.artifact_bytes(wt, p, vars_)                     # 산출물 크기 (크기 예산)
         if b.get("status") == "pass":
-            b["bytes"] = device.artifact_bytes(wt, p, vars_)                     # 산출물 크기 (크기 예산)
             cap = ((cfg.get("budget") or {}).get("app_bytes") or {}).get(p)
-            if cap and b["bytes"] and b["bytes"] > int(cap):
+            if cap and b.get("bytes") and b["bytes"] > int(cap):
                 b["status"], b["detail"] = "fail", f"크기 예산 초과: {b['bytes']:,} > {int(cap):,} bytes"
         r["build"] = b
-        r["contract_decode"] = (gen.decode_check(wt, p, util.tw(root, util.LOGS_DIR, f"decode-{feature}-{task['id']}-{p}.log"), cfg=cfg) if b.get("status") == "pass"
-                                else {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"})           # 계약 층(6장)
+        if modes[p] == "local":
+            r["contract_decode"] = (gen.decode_check(wt, p, logs[p]["decode"], cfg=cfg) if b.get("status") == "pass"
+                                    else {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"})           # 계약 층(6장)
     ok = all(r["static"]["status"] != "fail" and r["build"]["status"] != "fail" and (r.get("parity") or {}).get("status") != "fail"
              and r["contract_decode"]["status"] != "fail" for r in res.values())
     # 기기 층(6장): 설정 smoke.device — every 는 매번, merge 는 다른 층을 다 통과한 시도(= 머지 직전)에만, off 는 안 잰다. 못 잼은 머지를 막지 않고 보고서에 남는다. fail 은 막는다.
-    policy = (cfg.get("smoke") or {}).get("device", "merge")
     for p, r in res.items():
-        if policy == "off":
+        if r.get("device"):
+            pass                                              # 원격 every — build 와 한 잡에서 이미 쟀다
+        elif policy == "off":
             r["device"] = {"status": "unmeasured", "detail": "설정 smoke.device: off"}
         elif r["build"]["status"] != "pass":
             r["device"] = {"status": "unmeasured", "detail": "빌드 층이 통과하지 않아 건너뜀"}
+        elif modes[p] == "remote" and ok:                    # 머지 직전 — 그 플랫폼 러너에서 build(증분) + device
+            rl = runner.remote_layers(root, wts[p], p, vars_, cfg, ["build", "device"], logs[p], screenshot=shot(p))
+            rb = rl["build"]
+            r["device"] = (rl["device"] if rb.get("status") == "pass" else
+                           {"status": "fail", "detail": f"기기 잡의 빌드가 실패했다: {rb.get('detail')}", **({"runner_error": True} if rb.get("runner_error") else {})})
         elif policy == "every" or ok:
-            d = device.run(wts[p], p, vars_, util.tw(root, util.LOGS_DIR, f"device-{feature}-{task['id']}-{p}.log"),
-                           screenshot=os.path.join(root, REPORTS, feature, f"{task['id']}-{p}.png"))        # 증거 스크린샷 (나중에: 스크린샷)
+            d = device.run(wts[p], p, vars_, logs[p]["device"], screenshot=shot(p))        # 증거 스크린샷 (나중에: 스크린샷)
             r["device"] = {**d, "detail": leaks.mask_all(d.get("detail") or ""), "log": leaks.mask_all(d.get("log") or "")}
         else:
             r["device"] = {"status": "unmeasured", "detail": "다른 층이 실패한 시도 — 머지 직전에만 잰다(smoke.device: merge)"}
@@ -627,7 +653,9 @@ def classify_failure(res, retries=0):
         st, b, d, dv, par = (r.get(k) or {} for k in ("static", "build", "contract_decode", "device", "parity"))
         if st.get("status") == "fail":
             reasons.append(("rework", "dev", f"[{p}] static: {sorted({v['rule'] for v in st.get('violations') or []})}"))
-        if b.get("status") == "fail":
+        if b.get("status") == "fail" and b.get("runner_error"):
+            reasons.append(("blocked", "harness", f"[{p}] {b.get('detail')} — the build machine did not answer; fix the runner (twbuild runner status · ping), not the screen"))
+        elif b.get("status") == "fail":
             tail, det = b.get("tail") or "", b.get("detail") or ""
             if any(m in tail for m in GENERATED_MARKS):
                 reasons.append(("blocked", "harness", f"[{p}] the build fails inside generated code ({det}) — the generator or the contract is wrong, not the screen"))
@@ -643,7 +671,9 @@ def classify_failure(res, retries=0):
                 reasons.append(("retry", "harness", f"[{p}] contract decode check timed out"))
             else:
                 reasons.append(("rework", "dev", f"[{p}] contract decode test could not run ({det}) — the platform build/test setup is broken"))
-        if dv.get("status") == "fail":
+        if dv.get("status") == "fail" and dv.get("runner_error"):
+            reasons.append(("blocked", "harness", f"[{p}] device: {dv.get('detail')} — the build machine did not answer"))
+        elif dv.get("status") == "fail":
             det = dv.get("detail") or ""
             if "시간" in det or "timed" in det.lower() or "끝나지 않았다" in det:
                 reasons.append(("retry", "harness", f"[{p}] device: {det}"))
@@ -700,6 +730,9 @@ def visual_layer(root, feature, task, wts, res, cfg):
     out_dir = os.path.join(root, REPORTS, feature, "visual", task["id"])
     shots = {}
     for p in plats:
+        if runner.mode(root, cfg, p) == "remote":
+            res[p]["visual"] = {"status": "unmeasured", "detail": "원격 러너 플랫폼 — 시각 층은 아직 로컬 툴체인에서만 (15장)"}
+            continue
         r = tour.run_focus(root, wts[p], p, vars_, target, out_dir, cfg)
         if r.get("shot"):
             shots[p] = r["shot"]
@@ -891,6 +924,9 @@ def tour_section(root, feature, cfg):
     shots = {}
     plats = cfg.get("platforms") or []
     for p in plats:
+        if runner.mode(root, cfg, p) == "remote":
+            L.append(f"| {p} | — 못 잼 | 원격 러너 플랫폼 — 화면 순회는 아직 로컬 툴체인에서만 (15장) |")
+            continue
         r = tour.run(root, p, config.app_vars(cfg), out_dir)
         mark = {"pass": "✅", "fail": "❌"}.get(r["status"], "— 못 잼")
         L.append(f"| {p} | {mark} | {leaks.mask_all(r['detail'])} |")

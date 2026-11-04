@@ -58,6 +58,18 @@ def app_dir(root, platform):
     return os.path.join(root, APPS[platform])
 
 
+def gradlew(app):
+    """Gradle 래퍼 경로 — Windows 는 gradlew.bat (15장 빌드 머신). 파일이 있는지는 호출자가 본다."""
+    return os.path.join(app, "gradlew.bat" if os.name == "nt" else "gradlew")
+
+
+def exe(path):
+    """실행 파일 경로 — Windows 면 .exe 를 붙인 것이 있으면 그것 (adb · emulator)."""
+    if os.name == "nt" and path and not os.path.isfile(path) and os.path.isfile(path + ".exe"):
+        return path + ".exe"
+    return path
+
+
 def data_dir():
     """플러그인 데이터 디렉터리 — venv · 공개 스킬 캐시. 플러그인 업데이트에도 남는다.
     Bash 도구에는 CLAUDE_PLUGIN_DATA 가 없어서 고정 경로를 쓴다 (TWBUILD_DATA 로 바꿀 수 있다)."""
